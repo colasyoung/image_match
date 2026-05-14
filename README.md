@@ -67,6 +67,27 @@ npm run dev
    - （可选）`MASTER_ADMIN_SECRET`：用于 `/admin?key=…` 总站，见上文「管理页面」
 4. 点击 **Deploy**。完成后用 Vercel 提供的 `*.vercel.app` 域名测试；若上传图片失败，在 **imgbb** 或 **Vercel 函数日志**里看报错（常见为 key 错误或 imgbb 域名未在 `next.config.ts` 的 `images.remotePatterns` 中，可按实际图片域名增补）。
 
+#### Vercel 部署失败 / GitHub 上 Vercel check 红字
+
+1. 打开 Vercel 项目 → **Deployments → 失败的那条 → Build Logs**，看最后一屏报错（常见：`npm ci` 失败、依赖无法下载、Node 版本不符）。
+2. 本项目在 `package.json` 里声明了 **`engines.node >= 20.9.0`**；请在 Vercel **Settings → General → Node.js Version** 选 **20.x**（不要低于 20.9）。
+3. 仓库内已带 **`.npmrc`**（固定 `registry.npmjs.org`）并重生成 **`package-lock.json`**，避免国内镜像 `npmmirror` 导致在海外构建机上下载依赖失败或超时。
+4. 确认 **Environment Variables** 已按上文填齐（缺变量时，**运行期**接口会报错；一般不影响 `next build`，但请避免漏配）。
+
+#### Cloudflare：不要用 Workers Builds 跑本仓库
+
+本应用是 **带 API Routes 的 Next.js（Node 运行时）**，**不是**纯静态站。若在 Cloudflare 上为 GitHub 仓库开启了 **Workers Builds / 自动部署 Worker**，可能出现：
+
+- GitHub 上显示 **Workers Builds 成功**，但 **没有可用的 Next 站点**（Worker 无法等价替代 Vercel 上的 Node 部署）；
+- 与 Vercel 抢同一套 Git 事件，增加干扰。
+
+**推荐做法**：
+
+- **应用只部署在 Vercel**（或另一支持 Node 的平台）；
+- Cloudflare **只做 DNS**：把自定义域名 **CNAME 到 Vercel**（在 Vercel 项目里绑定域名后，按提示填 `cname.vercel-dns.com` 等），需要 CDN/WAF 时可对记录开启 **Proxied（橙云）**。
+
+若已在 Cloudflare 连接过该 Git 仓库：请到 **Workers & Pages → 对应 Worker / 项目 → Settings → Builds（或 Git 集成）→ Disconnect**，避免无意义的 Worker 构建。
+
 每次 push 到默认分支，Vercel 会自动重新部署（可在项目设置里改分支）。
 
 ## 推到 GitHub
@@ -87,7 +108,7 @@ git push -u origin main
 
 因此：
 
-- **推荐（与规格一致）**：把本仓库接到 **[Vercel](https://vercel.com)**（或 Netlify / Cloudflare Workers 等支持 Node 的平台），在控制台配置与 `.env.example` 相同的环境变量，即可得到公网 HTTPS 地址给用户测试。
+- **推荐（与规格一致）**：把本仓库接到 **[Vercel](https://vercel.com)**（或 Netlify / 其他支持 Node 的托管），在控制台配置与 `.env.example` 相同的环境变量，即可得到公网 HTTPS 地址给用户测试。**不要**指望用 **Cloudflare Workers Builds** 直接部署本仓库的 Next 应用（需 OpenNext 等单独改造，默认不可用）；Cloudflare 更适合作为 **DNS / CDN 前置** 指向 Vercel，见上文「Cloudflare：不要用 Workers Builds」。
 - **若必须使用 `*.github.io`**：需要把业务全部改成「纯静态前端 + Supabase Edge Functions / 仅客户端 + RLS」等大改，**当前仓库未按该模式实现**。
 
 本仓库已包含 **GitHub Actions CI**（`.github/workflows/ci.yml`），在每次 push / PR 时执行 `npm run build` 做基础校验。
