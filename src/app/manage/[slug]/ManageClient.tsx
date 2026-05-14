@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ImagePickButton, ImageUploadHints } from "@/components/ImageUploadHints";
 import { cn } from "@/lib/utils";
 
 type MatchApi = {
@@ -57,6 +58,12 @@ export function ManageClient({ slug }: { slug: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [copiedPageUrl, setCopiedPageUrl] = useState(false);
+
+  const pageUrl = useMemo(() => {
+    if (typeof window === "undefined" || !token || !slug) return "";
+    return `${window.location.origin}/manage/${slug}?token=${encodeURIComponent(token)}`;
+  }, [slug, token]);
 
   const load = useCallback(async () => {
     await Promise.resolve();
@@ -187,6 +194,34 @@ export function ManageClient({ slug }: { slug: string }) {
         <p className="text-white/50">加载中…</p>
       ) : (
         <>
+          {pageUrl ? (
+            <div className="rounded-2xl border-2 border-amber-400/35 bg-amber-500/10 p-4 shadow-md shadow-amber-950/40">
+              <p className="text-sm font-medium text-amber-100">请收藏本页完整链接（含 token）</p>
+              <p className="mt-1 text-xs text-amber-100/75">
+                投票页 <code className="rounded bg-black/30 px-1">/m/{slug}</code>{" "}
+                没有管理入口；丢失下方链接将无法再管理本场比赛。
+              </p>
+              <code className="mt-2 block max-h-24 overflow-auto break-all rounded-lg bg-black/40 p-2 text-[10px] leading-relaxed text-cyan-100/90">
+                {pageUrl}
+              </code>
+              <Button
+                type="button"
+                className="mt-3 !bg-amber-400/90 !text-slate-950 hover:!bg-amber-300"
+                onClick={() => {
+                  void navigator.clipboard.writeText(pageUrl).then(
+                    () => {
+                      setCopiedPageUrl(true);
+                      setTimeout(() => setCopiedPageUrl(false), 2500);
+                    },
+                    () => setErr("复制失败，请手动选择地址栏链接")
+                  );
+                }}
+              >
+                {copiedPageUrl ? "已复制" : "复制本页管理链接"}
+              </Button>
+            </div>
+          ) : null}
+
           {/* 当前状态 */}
           <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -267,34 +302,29 @@ export function ManageClient({ slug }: { slug: string }) {
 
           {/* 图片管理 */}
           <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-white/40">图片列表</p>
                 <h3 className="text-base font-medium text-white">增删图片</h3>
-                <p className="text-xs text-white/45">经服务端上传到 imgbb；进行中也可替换图库（删除会清理相关对战数据）。</p>
+                <p className="mt-1 text-xs text-white/45">
+                  经服务端上传到 imgbb；删除会清理相关对战数据。进行中也可增删（不足 2 张时进行中会自动暂停）。
+                </p>
               </div>
-              <label className="cursor-pointer">
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="sr-only"
-                  disabled={uploading || loading || data.images.length >= 10}
-                  onChange={(e) => void uploadFiles(e.target.files)}
-                />
-                <span
-                  className={cn(
-                    "inline-flex rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15",
-                    (uploading || data.images.length >= 10) && "pointer-events-none opacity-40"
-                  )}
-                >
-                  {uploading ? "上传中…" : data.images.length >= 10 ? "已达 10 张上限" : "添加图片"}
-                </span>
-              </label>
+
+              <ImageUploadHints />
+
+              <ImagePickButton
+                id="manage-upload-pick"
+                disabled={loading || data.images.length >= 10}
+                busy={uploading}
+                label={data.images.length >= 10 ? "已达 10 张上限" : "点击选择图片上传"}
+                subLabel="支持多选 · 每张单独提交 · 与创建页相同规则"
+                onFiles={(list) => void uploadFiles(list)}
+              />
             </div>
 
             {data.images.length === 0 ? (
-              <p className="mt-6 text-center text-sm text-white/45">暂无图片，点击「添加图片」上传。</p>
+              <p className="mt-6 text-center text-sm text-white/45">暂无图片，使用上方按钮上传。</p>
             ) : (
               <ul className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                 {data.images.map((img) => (

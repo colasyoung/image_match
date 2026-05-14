@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ImagePickButton, ImageUploadHints } from "@/components/ImageUploadHints";
 
 export default function CreatePage() {
   const [title, setTitle] = useState("");
@@ -17,6 +18,8 @@ export default function CreatePage() {
   } | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [copied, setCopied] = useState(false);
+  /** 开启比赛成功后不再自动跳转，避免来不及复制管理链接 */
+  const [activatedSuccess, setActivatedSuccess] = useState(false);
 
   const canCreate = title.trim().length > 0;
 
@@ -36,6 +39,7 @@ export default function CreatePage() {
     }
     const j = await res.json();
     setCreated({ slug: j.slug, manageToken: j.manageToken, id: j.id });
+    setActivatedSuccess(false);
   }, [title, description, isPublic]);
 
   const uploadAll = useCallback(async () => {
@@ -60,6 +64,7 @@ export default function CreatePage() {
       return;
     }
     setLoading(false);
+    setFiles([]);
   }, [created, files]);
 
   const activate = useCallback(async () => {
@@ -77,13 +82,24 @@ export default function CreatePage() {
       setErr(j.error ?? "开启失败（至少需要 2 张图）");
       return;
     }
-    window.location.href = `/m/${created.slug}`;
+    setErr(null);
+    setActivatedSuccess(true);
   }, [created]);
 
   const manageUrl = useMemo(() => {
     if (!created) return "";
     return `${typeof window !== "undefined" ? window.location.origin : ""}/manage/${created.slug}?token=${created.manageToken}`;
   }, [created]);
+
+  const copyManage = () => {
+    void navigator.clipboard.writeText(manageUrl).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      },
+      () => setErr("复制失败，请手动全选上方链接")
+    );
+  };
 
   return (
     <div className="mx-auto max-w-lg space-y-8 px-4 py-10">
@@ -130,7 +146,8 @@ export default function CreatePage() {
             <p className="text-base font-semibold text-amber-100">务必保存：管理页面入口</p>
             <p className="mt-2 text-xs leading-relaxed text-amber-100/85">
               普通用户只会打开比赛页 <code className="rounded bg-black/30 px-1">/m/{created.slug}</code>。
-              只有下面这个链接能<strong>暂停 / 结束 / 删除</strong>比赛并上传图片；<strong>丢失 token 后无法找回</strong>（除非你在服务器配置了总站，见 README）。
+              只有下面这个链接能<strong>暂停 / 结束 / 删图 / 再上传</strong>；<strong>丢失 token 后无法找回</strong>
+              （除非配置了总站 <code className="rounded bg-black/30 px-1">/admin?key=…</code>，见 README）。
             </p>
             <p className="mt-3 break-all rounded-lg bg-black/35 p-3 font-mono text-[11px] leading-snug text-cyan-100/95">
               {manageUrl}
@@ -139,15 +156,7 @@ export default function CreatePage() {
               <Button
                 type="button"
                 className="!bg-amber-400/90 !text-slate-950 hover:!bg-amber-300"
-                onClick={() => {
-                  void navigator.clipboard.writeText(manageUrl).then(
-                    () => {
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2500);
-                    },
-                    () => setErr("复制失败，请手动全选上方链接")
-                  );
-                }}
+                onClick={() => copyManage()}
               >
                 {copied ? "已复制" : "复制管理链接"}
               </Button>
@@ -157,34 +166,76 @@ export default function CreatePage() {
               >
                 打开管理页
               </Link>
-              <Link href={`/m/${created.slug}`} className="text-xs text-white/55 underline hover:text-white/80">
-                仅预览比赛页
-              </Link>
             </div>
           </div>
 
-          <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-            <label className="block space-y-2">
-              <span className="text-xs text-white/55">上传图片（2–10 张，每张经服务端转存 imgbb）</span>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 10))}
-                className="text-sm text-white/70"
-              />
-            </label>
-            <div className="text-xs text-white/45">已选 {files.length} 张</div>
-            {err ? <p className="text-sm text-amber-200/90">{err}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={!files.length || loading} onClick={() => void uploadAll()}>
-                {loading ? "上传中…" : "上传全部"}
-              </Button>
-              <Button variant="ghost" disabled={loading} onClick={() => void activate()}>
-                开启比赛（≥2 张）
-              </Button>
+          {activatedSuccess ? (
+            <div className="space-y-4 rounded-2xl border-2 border-emerald-400/50 bg-emerald-500/15 p-6 shadow-lg shadow-emerald-900/30">
+              <p className="text-lg font-semibold text-emerald-50">比赛已开启</p>
+              <p className="text-sm leading-relaxed text-emerald-100/85">
+                未自动跳转，方便你先<strong>复制上方管理链接</strong>。投票页只用于打分，不含管理入口。
+              </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <Button type="button" variant="success" className="min-h-11 px-6 text-base" onClick={() => void copyManage()}>
+                  {copied ? "已复制管理链接" : "再复制一次管理链接"}
+                </Button>
+                <Link
+                  href={`/m/${created.slug}`}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-6 text-base font-semibold text-slate-900 shadow hover:bg-white/90"
+                >
+                  进入投票页
+                </Link>
+                <Link
+                  href={`/manage/${created.slug}?token=${encodeURIComponent(created.manageToken)}`}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/25 px-6 text-base font-medium text-white hover:bg-white/10"
+                >
+                  去管理页上传更多图
+                </Link>
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <ImageUploadHints />
+
+              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+                <h2 className="text-sm font-medium text-white">上传图片</h2>
+                <p className="text-xs text-white/50">需 2–10 张后再点「开启比赛」。可多选。</p>
+
+                <ImagePickButton
+                  id="create-upload-pick"
+                  disabled={loading}
+                  busy={loading}
+                  label="点击选择图片上传"
+                  subLabel="支持多选 · 每张单独提交到服务端"
+                  onFiles={(list) => setFiles(Array.from(list ?? []).slice(0, 10))}
+                />
+
+                {files.length > 0 ? (
+                  <p className="text-center text-sm text-white/70">已选 {files.length} 张，点击下方上传</p>
+                ) : null}
+
+                {err ? <p className="text-sm text-amber-200/90">{err}</p> : null}
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    disabled={!files.length || loading}
+                    className="min-h-11 flex-1 bg-cyan-500/85 text-base font-semibold text-slate-950 hover:bg-cyan-400"
+                    onClick={() => void uploadAll()}
+                  >
+                    {loading ? "上传中…" : "上传已选图片"}
+                  </Button>
+                  <Button
+                    variant="success"
+                    disabled={loading}
+                    className="min-h-11 flex-1 text-base font-semibold"
+                    onClick={() => void activate()}
+                  >
+                    开启比赛（需 ≥2 张已上传）
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
