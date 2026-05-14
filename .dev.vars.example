@@ -1,0 +1,3 @@
+# 仅本地 `opennextjs-cloudflare preview` 使用；复制为 `.dev.vars` 后填入（勿提交密钥）
+# https://developers.cloudflare.com/workers/testing/local-development/#local-only-environment-variables
+NEXTJS_ENV=development

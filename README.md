@@ -74,19 +74,16 @@ npm run dev
 3. 仓库内已带 **`.npmrc`**（固定 `registry.npmjs.org`）并重生成 **`package-lock.json`**，避免国内镜像 `npmmirror` 导致在海外构建机上下载依赖失败或超时。
 4. 确认 **Environment Variables** 已按上文填齐（缺变量时，**运行期**接口会报错；一般不影响 `next build`，但请避免漏配）。
 
-#### Cloudflare：不要用 Workers Builds 跑本仓库
+#### Cloudflare Workers 自动构建（OpenNext）
 
-本应用是 **带 API Routes 的 Next.js（Node 运行时）**，**不是**纯静态站。若在 Cloudflare 上为 GitHub 仓库开启了 **Workers Builds / 自动部署 Worker**，可能出现：
+若你在 Cloudflare 上为仓库配置了 **Git 自动构建**，默认构建命令常为 **`npx opennextjs-cloudflare build`**。本仓库已包含 **`@opennextjs/cloudflare` + `wrangler.jsonc` + `open-next.config.ts`**，与上述命令兼容。
 
-- GitHub 上显示 **Workers Builds 成功**，但 **没有可用的 Next 站点**（Worker 无法等价替代 Vercel 上的 Node 部署）；
-- 与 Vercel 抢同一套 Git 事件，增加干扰。
+- **环境变量**：在 Cloudflare 项目的 **Settings → Variables** 中为 Worker 配置与 `.env.example` / Vercel 相同的变量（如 `NEXT_PUBLIC_SUPABASE_*`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等），否则运行期接口会失败。
+- **`wrangler.jsonc` 里的 `name` / `services[0].service`** 需与你在 Cloudflare 控制台里的 **Worker 名称**一致（当前为 `image-match`；若你的服务名不同，请改两处保持一致）。
 
-**推荐做法**：
+**仍更简单、推荐的做法**：应用主部署在 **Vercel**（`npm run build`），Cloudflare **只做 DNS** 指到 Vercel（见下）。两套 CI（Vercel + Cloudflare）同时连同一分支时，维护成本更高。
 
-- **应用只部署在 Vercel**（或另一支持 Node 的平台）；
-- Cloudflare **只做 DNS**：把自定义域名 **CNAME 到 Vercel**（在 Vercel 项目里绑定域名后，按提示填 `cname.vercel-dns.com` 等），需要 CDN/WAF 时可对记录开启 **Proxied（橙云）**。
-
-若已在 Cloudflare 连接过该 Git 仓库：请到 **Workers & Pages → 对应 Worker / 项目 → Settings → Builds（或 Git 集成）→ Disconnect**，避免无意义的 Worker 构建。
+若不再需要 Cloudflare 自动构建：可到 **Workers & Pages → 项目 → Settings → Builds → Disconnect** 断开 Git。
 
 每次 push 到默认分支，Vercel 会自动重新部署（可在项目设置里改分支）。
 
@@ -108,7 +105,7 @@ git push -u origin main
 
 因此：
 
-- **推荐（与规格一致）**：把本仓库接到 **[Vercel](https://vercel.com)**（或 Netlify / 其他支持 Node 的托管），在控制台配置与 `.env.example` 相同的环境变量，即可得到公网 HTTPS 地址给用户测试。**不要**指望用 **Cloudflare Workers Builds** 直接部署本仓库的 Next 应用（需 OpenNext 等单独改造，默认不可用）；Cloudflare 更适合作为 **DNS / CDN 前置** 指向 Vercel，见上文「Cloudflare：不要用 Workers Builds」。
+- **推荐（与规格一致）**：把本仓库接到 **[Vercel](https://vercel.com)**（或 Netlify / 其他支持 Node 的托管），在控制台配置与 `.env.example` 相同的环境变量，即可得到公网 HTTPS 地址给用户测试。若同时使用 **Cloudflare Workers 自动构建**，需按上文「Cloudflare Workers 自动构建（OpenNext）」配齐 OpenNext 与 Worker 环境变量；否则更推荐 **Cloudflare 只做 DNS / CDN 前置** 指向 Vercel。
 - **若必须使用 `*.github.io`**：需要把业务全部改成「纯静态前端 + Supabase Edge Functions / 仅客户端 + RLS」等大改，**当前仓库未按该模式实现**。
 
 本仓库已包含 **GitHub Actions CI**（`.github/workflows/ci.yml`），在每次 push / PR 时执行 `npm run build` 做基础校验。
