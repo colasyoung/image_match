@@ -1,10 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ImagePickButton, ImageUploadHints } from "@/components/ImageUploadHints";
+import { useAdminUploadBypass } from "@/hooks/useAdminUploadBypass";
+import { ADMIN_UPLOAD_BYPASS_QUERY } from "@/lib/admin-upload-bypass";
+import { DEFAULT_MAX_IMAGES_PER_MATCH, effectiveImageCap } from "@/lib/match-limits";
 import { cn } from "@/lib/utils";
 
 type Created = { slug: string; manageToken: string; id: string };
@@ -30,6 +34,7 @@ function friendlyApiError(raw: string): string {
     Bad: "请求无效，请刷新页面重试。",
     "Need at least 2 images": "请先至少上传 2 张图片，再开启比赛。",
     "Cannot activate from current state": "当前状态无法开启，请刷新页面后重试。",
+    "Max 10 images": "图片数量已达上限（未使用或无效的管理员免上限密钥时，每场比赛最多 10 张）。",
   };
   return map[raw] ?? raw;
 }
@@ -67,6 +72,19 @@ function StepBadge({ n, label, active, done }: { n: number; label: string; activ
 }
 
 export default function CreatePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-xl px-4 py-16 text-center text-sm text-white/50">加载中…</div>
+      }
+    >
+      <CreatePageInner />
+    </Suspense>
+  );
+}
+
+function CreatePageInner() {
+  const search = useSearchParams();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(true);
@@ -80,13 +98,25 @@ export default function CreatePage() {
   const [uploadPhase, setUploadPhase] = useState<string | null>(null);
   const [pickHint, setPickHint] = useState<string | null>(null);
 
+  const { adminUploadBypassToken, setAdminUploadBypassToken } = useAdminUploadBypass();
+
+  const uploadBypassFromUrl = useMemo(
+    () => search.get(ADMIN_UPLOAD_BYPASS_QUERY)?.trim() ?? "",
+    [search]
+  );
+  useEffect(() => {
+    if (uploadBypassFromUrl) setAdminUploadBypassToken(uploadBypassFromUrl);
+  }, [uploadBypassFromUrl, setAdminUploadBypassToken]);
+
   const uploadedCountLive = useRef(0);
 
   const canCreate = title.trim().length > 0;
   const uploadedCount = uploadedImages.length;
   const needMore = Math.max(0, 2 - uploadedCount);
   const canActivate = uploadedCount >= 2 && !loading;
-  const slotsLeft = Math.max(0, 10 - uploadedCount - queue.length);
+  const imageCap = effectiveImageCap(adminUploadBypassToken);
+  const slotsLeft = Math.max(0, imageCap - uploadedCount - queue.length);
+  const maxImagesLabel = adminUploadBypassToken.trim() ? "不限" : String(DEFAULT_MAX_IMAGES_PER_MATCH);
 
   useEffect(() => {
     uploadedCountLive.current = uploadedCount;
@@ -101,97 +131,111 @@ export default function CreatePage() {
     setUploadedImages(list as ImageRow[]);
   }, []);
 
-  const addIncomingFiles = useCallback((list: FileList | null) => {
-    const raw = list?.length ? Array.from(list) : [];
-    if (!raw.length) return;
-    const images = filterImageFiles(raw);
-    if (!images.length) {
-      setPickHint("没有发现图片文件，请选择 jpg、png、webp 等常见图片格式。");
-      window.setTimeout(() => setPickHint(null), 4500);
-      return;
-    }
-
-    let hint: string | null = null;
-    setQueue((prev) => {
-      const u = uploadedCountLive.current;
-      const room = Math.max(0, 10 - u - prev.length);
-      if (room <= 0) {
-        hint = "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
-        return prev;
-      }
-      const take = images.slice(0, room);
-      const skipped = images.length - take.length;
-      const additions = take.map((file) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 10)}`,
-        kind: "file" as const,
-        file,
-        previewUrl: URL.createObjectURL(file),
-      }));
-      if (skipped > 0) {
-        hint = `已加入 ${take.length} 张；另有 ${skipped} 张因超出上限未加入。`;
-      } else {
-        hint = `已加入 ${take.length} 张，当前队列 ${prev.length + take.length} 张（记得点下方「上传」）。`;
-      }
-      return [...prev, ...additions];
-    });
-    if (hint) {
-      setPickHint(hint);
-      window.setTimeout(() => setPickHint(null), 4500);
-    }
-  }, []);
-
-  const addIncomingUrls = useCallback((urls: string[]) => {
-    const unique = [...new Set(urls.map((u) => u.trim()).filter(Boolean))];
-    if (!unique.length) return;
-
-    let hint: string | null = null;
-    setQueue((prev) => {
-      const u = uploadedCountLive.current;
-      const room = Math.max(0, 10 - u - prev.length);
-      if (room <= 0) {
-        hint = "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
-        return prev;
+  const addIncomingFiles = useCallback(
+    (list: FileList | null) => {
+      const cap = effectiveImageCap(adminUploadBypassToken);
+      const raw = list?.length ? Array.from(list) : [];
+      if (!raw.length) return;
+      const images = filterImageFiles(raw);
+      if (!images.length) {
+        setPickHint("没有发现图片文件，请选择 jpg、png、webp 等常见图片格式。");
+        window.setTimeout(() => setPickHint(null), 4500);
+        return;
       }
 
-      const already = new Set<string>();
-      for (const q of prev) {
-        if (q.kind === "url") already.add(q.sourceUrl);
+      let hint: string | null = null;
+      setQueue((prev) => {
+        const u = uploadedCountLive.current;
+        const room = Math.max(0, cap - u - prev.length);
+        if (room <= 0) {
+          hint =
+            cap > DEFAULT_MAX_IMAGES_PER_MATCH
+              ? "队列已满或已达浏览器单次可添加数量，请先点「上传」或删掉队列里的项。"
+              : "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
+          return prev;
+        }
+        const take = images.slice(0, room);
+        const skipped = images.length - take.length;
+        const additions = take.map((file) => ({
+          id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 10)}`,
+          kind: "file" as const,
+          file,
+          previewUrl: URL.createObjectURL(file),
+        }));
+        if (skipped > 0) {
+          hint = `已加入 ${take.length} 张；另有 ${skipped} 张因超出上限未加入。`;
+        } else {
+          hint = `已加入 ${take.length} 张，当前队列 ${prev.length + take.length} 张（记得点下方「上传」）。`;
+        }
+        return [...prev, ...additions];
+      });
+      if (hint) {
+        setPickHint(hint);
+        window.setTimeout(() => setPickHint(null), 4500);
       }
+    },
+    [adminUploadBypassToken]
+  );
 
-      const take: string[] = [];
-      for (const url of unique) {
-        if (take.length >= room) break;
-        if (already.has(url)) continue;
-        take.push(url);
+  const addIncomingUrls = useCallback(
+    (urls: string[]) => {
+      const cap = effectiveImageCap(adminUploadBypassToken);
+      const unique = [...new Set(urls.map((u) => u.trim()).filter(Boolean))];
+      if (!unique.length) return;
+
+      let hint: string | null = null;
+      setQueue((prev) => {
+        const u = uploadedCountLive.current;
+        const room = Math.max(0, cap - u - prev.length);
+        if (room <= 0) {
+          hint =
+            cap > DEFAULT_MAX_IMAGES_PER_MATCH
+              ? "队列已满或已达浏览器单次可添加数量，请先点「上传」或删掉队列里的项。"
+              : "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
+          return prev;
+        }
+
+        const already = new Set<string>();
+        for (const q of prev) {
+          if (q.kind === "url") already.add(q.sourceUrl);
+        }
+
+        const take: string[] = [];
+        for (const url of unique) {
+          if (take.length >= room) break;
+          if (already.has(url)) continue;
+          take.push(url);
+        }
+
+        if (!take.length) {
+          hint = unique.every((x) => already.has(x))
+            ? "这些网页图片链接已在队列中。"
+            : "没有可用空位添加更多链接。";
+          return prev;
+        }
+
+        const additions: QueuedImage[] = take.map((sourceUrl) => ({
+          id: `url-${sourceUrl.slice(0, 24)}-${Math.random().toString(36).slice(2, 11)}`,
+          kind: "url" as const,
+          sourceUrl,
+          previewUrl: sourceUrl,
+        }));
+
+        const dropped = unique.length - take.length;
+        if (dropped > 0) {
+          hint = `已加入 ${take.length} 个网页图片链接；另有 ${dropped} 个因重复或超出上限未加入。`;
+        } else {
+          hint = `已加入 ${take.length} 个网页图片链接（点「上传」后由服务端拉取并传到图床）。`;
+        }
+        return [...prev, ...additions];
+      });
+      if (hint) {
+        setPickHint(hint);
+        window.setTimeout(() => setPickHint(null), 5000);
       }
-
-      if (!take.length) {
-        hint = unique.every((x) => already.has(x))
-          ? "这些网页图片链接已在队列中。"
-          : "没有可用空位添加更多链接。";
-        return prev;
-      }
-
-      const additions: QueuedImage[] = take.map((sourceUrl) => ({
-        id: `url-${sourceUrl.slice(0, 24)}-${Math.random().toString(36).slice(2, 11)}`,
-        kind: "url" as const,
-        sourceUrl,
-        previewUrl: sourceUrl,
-      }));
-
-      const dropped = unique.length - take.length;
-      if (dropped > 0) {
-        hint = `已加入 ${take.length} 个网页图片链接；另有 ${dropped} 个因重复或超出上限未加入。`;
-      } else {
-        hint = `已加入 ${take.length} 个网页图片链接（点「上传」后由服务端拉取并传到图床）。`;
-      }
-      return [...prev, ...additions];
-    });
-    if (hint) {
-      setPickHint(hint);
-      window.setTimeout(() => setPickHint(null), 5000);
-    }
-  }, []);
+    },
+    [adminUploadBypassToken]
+  );
 
   const removeFromQueue = useCallback((id: string) => {
     setQueue((prev) => {
@@ -253,6 +297,8 @@ export default function CreatePage() {
         } else {
           fd.set("imageUrl", q.sourceUrl);
         }
+        const bypass = adminUploadBypassToken.trim();
+        if (bypass) fd.set("adminUploadBypassToken", bypass);
         const res = await fetch("/api/upload-image", { method: "POST", body: fd });
         if (!res.ok) {
           const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -271,7 +317,7 @@ export default function CreatePage() {
       return;
     }
     setLoading(false);
-  }, [created, queue, refreshUploaded, clearQueueRevoke]);
+  }, [created, queue, refreshUploaded, clearQueueRevoke, adminUploadBypassToken]);
 
   const activate = useCallback(async () => {
     if (!created || uploadedCount < 2) return;
@@ -477,11 +523,47 @@ export default function CreatePage() {
             <>
               <ImageUploadHints compact />
 
+              <details className="rounded-xl border border-amber-400/25 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-100/85">
+                <summary className="cursor-pointer select-none font-medium text-amber-200/95">管理员：免 10 张上限</summary>
+                <p className="mt-2 leading-relaxed text-amber-100/75">
+                  在 Vercel 配置 <code className="rounded bg-black/35 px-1">ADMIN_IMAGE_UPLOAD_BYPASS_SECRET</code>
+                  （与 <code className="rounded bg-black/35 px-1">MASTER_ADMIN_SECRET</code> 无关）。知道该密钥的人可在地址栏附加查询参数{" "}
+                  <code className="rounded bg-black/35 px-1">
+                    ?{ADMIN_UPLOAD_BYPASS_QUERY}=密钥
+                  </code>
+                  （若已有 <code className="rounded bg-black/35 px-1">?</code> 则用{" "}
+                  <code className="rounded bg-black/35 px-1">&amp;{ADMIN_UPLOAD_BYPASS_QUERY}=密钥</code>
+                  ），与下方输入框二选一；会写入本机 sessionStorage。
+                  <span className="text-amber-200/70"> 勿把带此参数的链接发给他人（会进历史记录与 Referer）。</span>
+                  未配置或密钥错误时服务端仍按 10 张拒绝。
+                </p>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    placeholder="管理员免上限密钥"
+                    value={adminUploadBypassToken}
+                    onChange={(e) => setAdminUploadBypassToken(e.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="shrink-0 text-xs text-white/55"
+                    onClick={() => setAdminUploadBypassToken("")}
+                  >
+                    清除
+                  </Button>
+                </div>
+              </details>
+
               <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <h2 className="text-sm font-medium text-white">第 2 件事：上传图片</h2>
-                    <p className="mt-1 text-xs text-white/50">至少 2 张才能开启，最多 10 张。可以多次选择、分批上传。</p>
+                    <p className="mt-1 text-xs text-white/50">
+                      至少 2 张才能开启；普通用户每场比赛最多 {DEFAULT_MAX_IMAGES_PER_MATCH} 张，填写上方管理员密钥后不限张数（以服务端校验为准）。
+                    </p>
                   </div>
                   <div
                     className={cn(
@@ -489,7 +571,7 @@ export default function CreatePage() {
                       uploadedCount >= 2 ? "bg-emerald-500/20 text-emerald-100" : "bg-white/10 text-amber-100/90"
                     )}
                   >
-                    已上传 {uploadedCount} / 10 张
+                    已上传 {uploadedCount} / {maxImagesLabel} 张
                     {uploadedCount < 2 ? ` · 还差 ${needMore} 张` : " · 可以开启了"}
                   </div>
                 </div>
@@ -502,12 +584,12 @@ export default function CreatePage() {
                         className="relative h-14 w-14 overflow-hidden rounded-lg border border-white/15 bg-black/40 shadow-sm"
                       >
                         <Image
-                          src={img.image_url}
+                          src={img.thumb_url || img.image_url}
                           alt=""
                           fill
                           className="object-cover"
                           sizes="56px"
-                          unoptimized
+                          quality={70}
                         />
                       </li>
                     ))}
@@ -524,7 +606,13 @@ export default function CreatePage() {
                   id="create-upload-pick"
                   disabled={loading || slotsLeft <= 0}
                   busy={loading}
-                  label={slotsLeft <= 0 ? "已达 10 张上限" : "点这里选择照片，或从本机/网页拖入"}
+                  label={
+                    slotsLeft <= 0
+                      ? adminUploadBypassToken.trim()
+                        ? "暂无可添加空位（请先上传队列）"
+                        : "已达 10 张上限"
+                      : "点这里选择照片，或从本机/网页拖入"
+                  }
                   subLabel={
                     slotsLeft <= 0
                       ? "请先上传或删掉队列里的图"

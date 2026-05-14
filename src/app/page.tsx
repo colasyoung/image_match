@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { listMatchesHome } from "@/server/match-service";
 import { cn } from "@/lib/utils";
@@ -139,8 +140,14 @@ function MatchCard({
         )}
       >
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt="" className="h-full w-full object-cover opacity-90 transition group-hover:opacity-100" />
+          <Image
+            src={cover}
+            alt=""
+            fill
+            className="object-cover opacity-90 transition group-hover:opacity-100"
+            sizes={compact ? "56px" : "(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"}
+            priority={Boolean(highlight && !compact)}
+          />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-white/35">无封面</div>
         )}

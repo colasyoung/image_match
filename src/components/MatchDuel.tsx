@@ -153,7 +153,15 @@ function DuelCard({
         {side}
       </div>
       <div className="relative aspect-[4/5] max-md:aspect-[3/4] w-full bg-black/35">
-        <Image src={src} alt="" fill className="object-cover transition duration-300 group-hover:scale-[1.02]" sizes="(max-width:768px) 46vw, 50vw" unoptimized />
+        <Image
+          src={src}
+          alt=""
+          fill
+          priority
+          quality={82}
+          className="object-cover transition duration-300 group-hover:scale-[1.02]"
+          sizes="(max-width:768px) 46vw, 50vw"
+        />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent opacity-90" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3">
           <span className="rounded-full bg-cyan-500/90 px-2 py-1 text-[10px] font-semibold text-slate-950 shadow-md opacity-0 transition duration-200 group-hover:opacity-100 max-md:opacity-100 sm:px-3 sm:text-[11px] md:opacity-100">

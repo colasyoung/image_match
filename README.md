@@ -15,7 +15,7 @@
 
 在 [imgbb API](https://api.imgbb.com/) 申请 key，写入 `IMGBB_API_KEY`。
 
-**上传接口** `POST /api/upload-image`（`multipart/form-data`，字段 `matchId`、`manageToken`、`file`）：
+**上传接口** `POST /api/upload-image`（`multipart/form-data`；字段含 `matchId`、`manageToken`、`file` 或 `imageUrl`，可选 `adminUploadBypassToken`）：
 
 - 服务端代理调用 imgbb，**不在前端暴露 key**。
 - **单文件最大 16MB**（本应用限制；imgbb 文档中单图上限更高，此处按 16MB 截断）。
@@ -30,7 +30,8 @@
 cd /path/to/image_match
 cp .env.example .env.local
 # 编辑 .env.local，填齐 NEXT_PUBLIC_SUPABASE_URL、NEXT_PUBLIC_SUPABASE_ANON_KEY、
-# SUPABASE_SERVICE_ROLE_KEY、IMGBB_API_KEY（可选 IMGBB_EXPIRATION_SECONDS）
+# SUPABASE_SERVICE_ROLE_KEY、IMGBB_API_KEY（可选 IMGBB_EXPIRATION_SECONDS、MASTER_ADMIN_SECRET、
+# ADMIN_IMAGE_UPLOAD_BYPASS_SECRET，后两者说明见 .env.example 注释）
 
 npm install
 npm run dev
@@ -49,6 +50,19 @@ npm run dev
 - **可选「总站」**（方便集中管理多场比赛）：在环境变量中设置 **`MASTER_ADMIN_SECRET`** 为足够长的随机串，然后访问：  
   `https://你的域名/admin?key=<与 MASTER_ADMIN_SECRET 完全相同的值>`  
   会列出数据库中的比赛及各自完整管理链接。`key` 与密钥不一致或未配置时，页面会显示 404（避免暴露后台存在）。**切勿把该 URL 发到公网或聊天记录。**
+
+### 管理员：突破「每场比赛最多 10 张图」（可选）
+
+默认每场比赛最多 **10** 张图。若要在单场里继续传更多张，需要同时满足：
+
+1. **服务端**已在环境变量里配置 **`ADMIN_IMAGE_UPLOAD_BYPASS_SECRET`**（本地写在 `.env.local`，线上写在 Vercel 等托管的 Environment Variables 里，**改完需重新部署**）。未配置则永远无法突破 10 张。
+2. **浏览器侧**把**与上述环境变量完全相同**的字符串交给上传接口，任选其一即可：
+   - 打开 **创建页**或**管理页**，在「管理员：免 10 张上限」里粘贴；或  
+   - 在 URL 里加查询参数 **`uploadBypass=`** 同一串密钥，例如  
+     `https://你的域名/manage/<slug>?token=<manage_token>&uploadBypass=<密钥>`  
+     `https://你的域名/create?uploadBypass=<密钥>`  
+
+上传时 POST 表单会带字段 **`adminUploadBypassToken`**；仅当它与 **`ADMIN_IMAGE_UPLOAD_BYPASS_SECRET`** 一致时，服务端才取消 10 张限制。参数名 `uploadBypass` 与代码常量的对应关系见 `src/lib/admin-upload-bypass.ts`。**勿**把带 `uploadBypass=` 的链接发给他人（会泄露密钥）。
 
 ---
 

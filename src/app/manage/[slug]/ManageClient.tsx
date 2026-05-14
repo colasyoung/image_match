@@ -6,6 +6,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ImagePickButton, ImageUploadHints } from "@/components/ImageUploadHints";
+import { useAdminUploadBypass } from "@/hooks/useAdminUploadBypass";
+import { ADMIN_UPLOAD_BYPASS_QUERY } from "@/lib/admin-upload-bypass";
+import { DEFAULT_MAX_IMAGES_PER_MATCH, effectiveImageCap } from "@/lib/match-limits";
 import { cn } from "@/lib/utils";
 
 type MatchApi = {
@@ -62,6 +65,16 @@ export function ManageClient({ slug }: { slug: string }) {
   const [copiedVoteUrl, setCopiedVoteUrl] = useState(false);
   const [copiedAudienceUrl, setCopiedAudienceUrl] = useState(false);
   const [momentsHint, setMomentsHint] = useState<string | null>(null);
+
+  const { adminUploadBypassToken, setAdminUploadBypassToken } = useAdminUploadBypass();
+
+  const uploadBypassFromUrl = useMemo(
+    () => search.get(ADMIN_UPLOAD_BYPASS_QUERY)?.trim() ?? "",
+    [search]
+  );
+  useEffect(() => {
+    if (uploadBypassFromUrl) setAdminUploadBypassToken(uploadBypassFromUrl);
+  }, [uploadBypassFromUrl, setAdminUploadBypassToken]);
 
   const pageUrl = useMemo(() => {
     if (typeof window === "undefined" || !token || !slug) return "";
@@ -158,19 +171,22 @@ export function ManageClient({ slug }: { slug: string }) {
 
   const uploadFiles = async (files: FileList | null) => {
     if (!token || !data || !files?.length) return;
-    if (data.images.length >= 10) {
-      setErr("最多 10 张图片");
+    const cap = effectiveImageCap(adminUploadBypassToken);
+    if (data.images.length >= cap) {
+      setErr(adminUploadBypassToken.trim() ? "已达当前模式下的图片数量上限" : "最多 10 张图片");
       return;
     }
     setUploading(true);
     setErr(null);
     try {
-      const list = Array.from(files).slice(0, 10 - data.images.length);
+      const list = Array.from(files).slice(0, cap - data.images.length);
+      const bypass = adminUploadBypassToken.trim();
       for (const f of list) {
         const fd = new FormData();
         fd.set("matchId", data.match.id);
         fd.set("manageToken", token);
         fd.set("file", f);
+        if (bypass) fd.set("adminUploadBypassToken", bypass);
         const res = await fetch("/api/upload-image", { method: "POST", body: fd });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
@@ -188,22 +204,25 @@ export function ManageClient({ slug }: { slug: string }) {
 
   const uploadWebUrls = async (urls: string[]) => {
     if (!token || !data || !urls.length) return;
-    if (data.images.length >= 10) {
-      setErr("最多 10 张图片");
+    const cap = effectiveImageCap(adminUploadBypassToken);
+    if (data.images.length >= cap) {
+      setErr(adminUploadBypassToken.trim() ? "已达当前模式下的图片数量上限" : "最多 10 张图片");
       return;
     }
-    const room = 10 - data.images.length;
+    const room = cap - data.images.length;
     const take = [...new Set(urls.map((u) => u.trim()).filter(Boolean))].slice(0, room);
     if (!take.length) return;
 
     setUploading(true);
     setErr(null);
+    const bypass = adminUploadBypassToken.trim();
     try {
       for (const imageUrl of take) {
         const fd = new FormData();
         fd.set("matchId", data.match.id);
         fd.set("manageToken", token);
         fd.set("imageUrl", imageUrl);
+        if (bypass) fd.set("adminUploadBypassToken", bypass);
         const res = await fetch("/api/upload-image", { method: "POST", body: fd });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
@@ -224,6 +243,9 @@ export function ManageClient({ slug }: { slug: string }) {
   const meta = STATUS_META[status] ?? STATUS_META.draft;
   const canActivate = (data?.images.length ?? 0) >= 2;
   const isEnded = status === "ended";
+  const imageCap = data ? effectiveImageCap(adminUploadBypassToken) : DEFAULT_MAX_IMAGES_PER_MATCH;
+  const maxImagesLabel = adminUploadBypassToken.trim() ? "不限" : String(DEFAULT_MAX_IMAGES_PER_MATCH);
+  const atImageCap = data ? data.images.length >= imageCap : false;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-10">
@@ -415,17 +437,56 @@ export function ManageClient({ slug }: { slug: string }) {
                 <p className="text-xs font-medium uppercase tracking-wide text-white/40">图片列表</p>
                 <h3 className="text-base font-medium text-white">增删图片</h3>
                 <p className="mt-1 text-xs text-white/45">
-                  经服务端上传到 imgbb；删除会清理相关对战数据。进行中也可增删（不足 2 张时进行中会自动暂停）。
+                  当前图库 {data.images.length} / {maxImagesLabel} 张。经服务端上传到 imgbb；删除会清理相关对战数据。进行中也可增删（不足 2 张时进行中会自动暂停）。
                 </p>
               </div>
+
+              <details className="rounded-xl border border-amber-400/25 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-100/85">
+                <summary className="cursor-pointer select-none font-medium text-amber-200/95">管理员：免 10 张上限</summary>
+                <p className="mt-2 leading-relaxed text-amber-100/75">
+                  在 Vercel 设置 <code className="rounded bg-black/35 px-1">ADMIN_IMAGE_UPLOAD_BYPASS_SECRET</code>
+                  。知道该密钥的人可在管理链接后附加{" "}
+                  <code className="rounded bg-black/35 px-1">
+                    &amp;{ADMIN_UPLOAD_BYPASS_QUERY}=密钥
+                  </code>
+                  （若 URL 尚无查询串则用 <code className="rounded bg-black/35 px-1">?{ADMIN_UPLOAD_BYPASS_QUERY}=密钥</code>
+                  ），与下方输入框二选一；会同步到 sessionStorage。
+                  <span className="text-amber-200/70"> 勿分享带此参数的完整链接（会泄露密钥并进入浏览器历史）。</span>
+                  密钥错误或未配置时仍最多 {DEFAULT_MAX_IMAGES_PER_MATCH} 张。
+                </p>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    placeholder="管理员免上限密钥"
+                    value={adminUploadBypassToken}
+                    onChange={(e) => setAdminUploadBypassToken(e.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="shrink-0 text-xs text-white/55"
+                    onClick={() => setAdminUploadBypassToken("")}
+                  >
+                    清除
+                  </Button>
+                </div>
+              </details>
 
               <ImageUploadHints />
 
               <ImagePickButton
                 id="manage-upload-pick"
-                disabled={loading || data.images.length >= 10}
+                disabled={loading || atImageCap}
                 busy={uploading}
-                label={data.images.length >= 10 ? "已达 10 张上限" : "点击选择图片上传，或从网页拖入"}
+                label={
+                  atImageCap
+                    ? adminUploadBypassToken.trim()
+                      ? "已达当前模式下的图片上限"
+                      : "已达 10 张上限"
+                    : "点击选择图片上传，或从网页拖入"
+                }
                 subLabel="支持多选 · 每张单独提交 · 与创建页相同规则；网页拖入由服务端拉取原图后上传图床"
                 onFiles={(list) => void uploadFiles(list)}
                 onWebImageUrls={(u) => void uploadWebUrls(u)}
@@ -443,12 +504,12 @@ export function ManageClient({ slug }: { slug: string }) {
                   >
                     <div className="relative aspect-square w-full">
                       <Image
-                        src={img.image_url}
+                        src={img.thumb_url || img.image_url}
                         alt=""
                         fill
                         className="object-cover"
                         sizes="(max-width:768px) 50vw, 180px"
-                        unoptimized
+                        quality={75}
                       />
                     </div>
                     <div className="p-2">

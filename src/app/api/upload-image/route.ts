@@ -8,7 +8,7 @@ import {
 } from "@/lib/imgbb";
 
 /**
- * POST multipart：字段 `matchId`、`manageToken`、`file`（单文件）。
+ * POST multipart：字段 `matchId`、`manageToken`、`file` 或 `imageUrl`；可选 `adminUploadBypassToken`（与 ADMIN_IMAGE_UPLOAD_BYPASS_SECRET 一致时忽略 10 张上限）。
  * GET：返回本接口约束与 imgbb 行为说明（供前端 / 第三方对接）。
  *
  * imgbb 文档：https://api.imgbb.com/
@@ -25,6 +25,17 @@ export async function GET() {
         manageToken: "该比赛的管理 token",
         file: "单个图片文件（与 imageUrl 二选一）",
         imageUrl: "可选：公网 http(s) 图片地址，由服务端拉取后再传 imgbb（与 file 二选一）",
+        adminUploadBypassToken:
+          "可选：与部署环境 ADMIN_IMAGE_UPLOAD_BYPASS_SECRET 完全一致时，忽略每场比赛 10 张上限。浏览器侧来源：创建页/管理页折叠输入框，或 URL 查询参数 uploadBypass（见 README 与 .env.example）。仅服务端校验；勿泄露。",
+      },
+      adminUploadBypass: {
+        serverEnvVar: "ADMIN_IMAGE_UPLOAD_BYPASS_SECRET",
+        serverWhere:
+          "必须写在运行 Next 的环境（本地 .env.local 或 Vercel 等托管的 Environment Variables），部署后需重新发布；未配置则永远不能突破 10 张/场。",
+        clientHow:
+          "POST 表单字段 adminUploadBypassToken，值须与 ADMIN_IMAGE_UPLOAD_BYPASS_SECRET 完全相同；或由前端从 URL ?uploadBypass= 同步到该字段后随上传提交。",
+        urlQueryParam: "uploadBypass",
+        urlQueryParamDefinedIn: "src/lib/admin-upload-bypass.ts",
       },
     },
     limits: {
@@ -50,6 +61,17 @@ export async function POST(req: Request) {
     const matchId = String(form.get("matchId") ?? "");
     const manageToken = String(form.get("manageToken") ?? "");
     const imageUrlField = String(form.get("imageUrl") ?? "").trim();
+    const adminBypassRaw = String(form.get("adminUploadBypassToken") ?? "").trim();
+    const bypassSecret = process.env.ADMIN_IMAGE_UPLOAD_BYPASS_SECRET?.trim();
+    const bypassOk = Boolean(bypassSecret && adminBypassRaw && adminBypassRaw === bypassSecret);
+
+    if (adminBypassRaw && !bypassSecret) {
+      return NextResponse.json({ error: "服务器未配置管理员免上限密钥，无法使用该字段" }, { status: 400 });
+    }
+    if (adminBypassRaw && bypassSecret && !bypassOk) {
+      return NextResponse.json({ error: "管理员免上限密钥不正确" }, { status: 403 });
+    }
+
     const file = form.get("file");
     if (!matchId || !manageToken) {
       return NextResponse.json({ error: "matchId, manageToken required" }, { status: 400 });
@@ -86,14 +108,17 @@ export async function POST(req: Request) {
     }
 
     const uploaded = await uploadImageToImgbb(buf.toString("base64"), name);
-    const row = await addImageToMatch({
-      matchId,
-      manageToken,
-      imageUrl: uploaded.url,
-      thumbUrl: uploaded.thumb,
-      width: uploaded.width,
-      height: uploaded.height,
-    });
+    const row = await addImageToMatch(
+      {
+        matchId,
+        manageToken,
+        imageUrl: uploaded.url,
+        thumbUrl: uploaded.thumb,
+        width: uploaded.width,
+        height: uploaded.height,
+      },
+      { bypassImageLimit: bypassOk }
+    );
     return NextResponse.json({
       image: row,
       storage: {

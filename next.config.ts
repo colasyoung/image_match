@@ -2,10 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
+    /** imgbb 及常见子域；由 Next 边缘按需缩放 WebP/AVIF，减轻大图直链耗时 */
     remotePatterns: [
       { protocol: "https", hostname: "i.ibb.co", pathname: "/**" },
       { protocol: "https", hostname: "image.ibb.co", pathname: "/**" },
+      { protocol: "https", hostname: "*.ibb.co", pathname: "/**" },
     ],
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60 * 60 * 24 * 7,
   },
 };
 

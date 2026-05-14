@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { customAlphabet } from "nanoid";
 import { resolveImgbbExpirationSeconds } from "@/lib/imgbb";
+import { DEFAULT_MAX_IMAGES_PER_MATCH } from "@/lib/match-limits";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashIp } from "@/lib/ip";
 
@@ -125,15 +126,18 @@ export async function uploadImageToImgbb(base64: string, filename?: string) {
   };
 }
 
-export async function addImageToMatch(input: {
-  matchId: string;
-  manageToken: string;
-  imageUrl: string;
-  thumbUrl: string;
-  width?: number | null;
-  height?: number | null;
-  contentHash?: string | null;
-}): Promise<ImageRow> {
+export async function addImageToMatch(
+  input: {
+    matchId: string;
+    manageToken: string;
+    imageUrl: string;
+    thumbUrl: string;
+    width?: number | null;
+    height?: number | null;
+    contentHash?: string | null;
+  },
+  opts?: { bypassImageLimit?: boolean }
+): Promise<ImageRow> {
   const admin = createAdminClient();
   const { data: match, error: mErr } = await admin
     .from("matches")
@@ -147,7 +151,9 @@ export async function addImageToMatch(input: {
     .from("images")
     .select("*", { count: "exact", head: true })
     .eq("match_id", input.matchId);
-  if ((count ?? 0) >= 10) throw new Error("Max 10 images");
+  if (!opts?.bypassImageLimit && (count ?? 0) >= DEFAULT_MAX_IMAGES_PER_MATCH) {
+    throw new Error("Max 10 images");
+  }
 
   const { data: img, error } = await admin
     .from("images")

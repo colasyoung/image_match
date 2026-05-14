@@ -115,7 +115,15 @@ function VoteStrip({ row }: { row: ActivityFeedItem }) {
         <span className="ml-1 inline-flex translate-y-0.5 align-middle">
           {winnerSrc ? (
             <span className="relative inline-block h-7 w-7 overflow-hidden rounded-md border border-emerald-500/40 shadow-sm shadow-emerald-900/30">
-              <Image src={winnerSrc} alt="" fill className="object-cover" sizes="28px" unoptimized />
+              <Image
+                src={winnerSrc}
+                alt=""
+                fill
+                className="object-cover"
+                sizes="28px"
+                quality={70}
+                loading="lazy"
+              />
             </span>
           ) : null}
         </span>
@@ -135,7 +143,7 @@ function Mini({ src, ring }: { src: string; ring?: boolean }) {
         ring ? "border-emerald-400/70 ring-1 ring-emerald-400/25" : "border-white/12"
       )}
     >
-      <Image src={src} alt="" fill className="object-cover" sizes="32px" unoptimized />
+      <Image src={src} alt="" fill className="object-cover" sizes="32px" quality={70} loading="lazy" />
     </div>
   );
 }

@@ -66,7 +66,7 @@ export function LiveLeaderboard({
                   fill
                   className="object-cover"
                   sizes="44px"
-                  unoptimized
+                  quality={75}
                 />
               </div>
               <div className="min-w-0 flex-1">
