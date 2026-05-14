@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import { useLocale } from "@/contexts/LocaleProvider";
+import { friendlyApiError } from "@/lib/i18n/api-errors";
+import { FETCH_LOAD_TIMEOUT_MS, fetchWithTimeout, isAbortError } from "@/lib/fetch-with-timeout";
 import type { ImageRow } from "@/server/match-service";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,6 +13,7 @@ import { cn } from "@/lib/utils";
 type Props = { slug: string; disabled?: boolean };
 
 export function MatchDuel({ slug, disabled }: Props) {
+  const { t } = useLocale();
   const [left, setLeft] = useState<ImageRow | null>(null);
   const [right, setRight] = useState<ImageRow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -17,25 +21,42 @@ export function MatchDuel({ slug, disabled }: Props) {
   const [leftImgReady, setLeftImgReady] = useState(false);
   const [rightImgReady, setRightImgReady] = useState(false);
   const [imgLoadFailed, setImgLoadFailed] = useState(false);
+  const loadGenRef = useRef(0);
 
   const load = useCallback(async () => {
     await Promise.resolve();
+    const gen = ++loadGenRef.current;
     setErr(null);
     setImgLoadFailed(false);
     setLeftImgReady(false);
     setRightImgReady(false);
-    const res = await fetch(`/api/matches/${slug}/next-pair`);
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(`/api/matches/${slug}/next-pair`, undefined, FETCH_LOAD_TIMEOUT_MS);
+    } catch (e) {
+      if (isAbortError(e)) {
+        void load();
+        return;
+      }
+      if (gen !== loadGenRef.current) return;
+      setErr(t("duel.loadFail"));
+      setLeft(null);
+      setRight(null);
+      return;
+    }
+    if (gen !== loadGenRef.current) return;
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error ?? "无法加载对战");
+      setErr(j.error ? friendlyApiError(String(j.error), t) : t("duel.loadFail"));
       setLeft(null);
       setRight(null);
       return;
     }
     const j = await res.json();
+    if (gen !== loadGenRef.current) return;
     setLeft(j.left);
     setRight(j.right);
-  }, [slug]);
+  }, [slug, t]);
 
   useEffect(() => {
     setLeftImgReady(false);
@@ -50,25 +71,52 @@ export function MatchDuel({ slug, disabled }: Props) {
     }
   }, [disabled, load]);
 
+  /** 配对已返回但缩略图长时间未完成解码/拉取时，重新拉一对（防 CDN / 浏览器卡住） */
+  useEffect(() => {
+    if (disabled) return;
+    if (!left || !right) return;
+    if (leftImgReady && rightImgReady) return;
+    const id = window.setTimeout(() => {
+      void load();
+    }, FETCH_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(id);
+  }, [disabled, left, right, leftImgReady, rightImgReady, load]);
+
   const vote = async (winner: ImageRow, loser: ImageRow) => {
     if (!left || !right || busy || !leftImgReady || !rightImgReady || imgLoadFailed) return;
     setBusy(true);
     setErr(null);
-    const res = await fetch("/api/vote", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        slug,
-        winnerId: winner.id,
-        loserId: loser.id,
-        leftId: left.id,
-        rightId: right.id,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(
+        "/api/vote",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slug,
+            winnerId: winner.id,
+            loserId: loser.id,
+            leftId: left.id,
+            rightId: right.id,
+          }),
+        },
+        FETCH_LOAD_TIMEOUT_MS
+      );
+    } catch (e) {
+      setBusy(false);
+      if (isAbortError(e)) {
+        setErr(t("duel.requestTimeout"));
+        void load();
+        return;
+      }
+      setErr(t("duel.voteFail"));
+      return;
+    }
     setBusy(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error ?? "投票失败");
+      setErr(j.error ? friendlyApiError(String(j.error), t) : t("duel.voteFail"));
       return;
     }
     await load();
@@ -78,19 +126,28 @@ export function MatchDuel({ slug, disabled }: Props) {
     if (!left || !right || busy || !leftImgReady || !rightImgReady || imgLoadFailed) return;
     setBusy(true);
     setErr(null);
-    await fetch("/api/vote", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "skip", slug, leftId: left.id, rightId: right.id }),
-    });
-    setBusy(false);
+    try {
+      await fetchWithTimeout(
+        "/api/vote",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "skip", slug, leftId: left.id, rightId: right.id }),
+        },
+        FETCH_LOAD_TIMEOUT_MS
+      );
+    } catch (e) {
+      if (isAbortError(e)) setErr(t("duel.requestTimeout"));
+    } finally {
+      setBusy(false);
+    }
     await load();
   };
 
   if (disabled) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/60 backdrop-blur">
-        比赛未开启或已暂停，暂时不能投票。
+        {t("duel.inactive")}
       </div>
     );
   }
@@ -99,16 +156,17 @@ export function MatchDuel({ slug, disabled }: Props) {
     return (
       <div className="space-y-4 text-center">
         <p className="text-red-300/90">{err}</p>
-        <Button onClick={() => void load()}>重试</Button>
+        <Button onClick={() => void load()}>{t("duel.retry")}</Button>
       </div>
     );
   }
 
   if (!left || !right) {
-    return <div className="animate-pulse text-center text-white/50">正在为你挑两张图…</div>;
+    return <div className="animate-pulse text-center text-white/50">{t("duel.loadingPair")}</div>;
   }
 
   const imagesInteractive = leftImgReady && rightImgReady && !imgLoadFailed;
+  const revealPair = imagesInteractive;
   const gateBusy = busy || !imagesInteractive;
 
   return (
@@ -116,15 +174,19 @@ export function MatchDuel({ slug, disabled }: Props) {
       <p className="text-center text-xs leading-relaxed text-white/50 md:text-sm">
         {imgLoadFailed ? (
           <>
-            <strong className="text-amber-200/90">有图片未能加载</strong>，请检查网络后重试本对。
+            <strong className="text-amber-200/90">{t("duel.voteHintFailed")}</strong>
+            {t("duel.voteHintFailedSub")}
           </>
         ) : imagesInteractive ? (
           <>
-            下面两张随机配对，<strong className="text-white/75">点一下你更中意的那张</strong> 即完成一票；选不出来可以点底部「跳过」。
+            {t("duel.voteHintReady")}
+            <strong className="text-white/75">{t("duel.voteHintReadyStrong")}</strong>
+            {t("duel.voteHintReadySub")}
           </>
         ) : (
           <>
-            <strong className="text-cyan-200/85">图片加载中…</strong> 加载完成后才能投票或跳过，避免盲选。
+            <strong className="text-cyan-200/85">{t("duel.voteHintLoading")}</strong>
+            {t("duel.voteHintLoadingSub")}
           </>
         )}
       </p>
@@ -132,25 +194,25 @@ export function MatchDuel({ slug, disabled }: Props) {
       {imgLoadFailed ? (
         <div className="flex justify-center">
           <Button type="button" variant="outline" className="text-xs" onClick={() => void load()}>
-            重新加载本对
+            {t("duel.reloadPair")}
           </Button>
         </div>
       ) : null}
       <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4">
         <DuelCard
           image={left}
-          side="左"
+          side={t("duel.left")}
           busy={gateBusy}
-          imageReady={leftImgReady}
+          revealPair={revealPair}
           onPick={() => void vote(left, right)}
           onImageReady={() => setLeftImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
         />
         <DuelCard
           image={right}
-          side="右"
+          side={t("duel.right")}
           busy={gateBusy}
-          imageReady={rightImgReady}
+          revealPair={revealPair}
           onPick={() => void vote(right, left)}
           onImageReady={() => setRightImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -163,7 +225,7 @@ export function MatchDuel({ slug, disabled }: Props) {
           className="text-xs text-white/55"
           onClick={() => void skip()}
         >
-          都不好选，跳过这一对
+          {t("duel.skip")}
         </Button>
       </div>
     </div>
@@ -175,18 +237,20 @@ function DuelCard({
   side,
   onPick,
   busy,
-  imageReady,
+  revealPair,
   onImageReady,
   onImageError,
 }: {
   image: ImageRow;
   side: string;
-  busy: boolean;
-  imageReady: boolean;
   onPick: () => void;
+  busy: boolean;
+  /** 左右图都已解码完成：此时才同时露出画面，此前两侧均保持加载态 */
+  revealPair: boolean;
   onImageReady: () => void;
   onImageError: () => void;
 }) {
+  const { t } = useLocale();
   const src = image.image_url;
   return (
     <motion.button
@@ -207,9 +271,9 @@ function DuelCard({
         {side}
       </div>
       <div className="relative aspect-[4/5] max-md:aspect-[3/4] w-full bg-black/35">
-        {!imageReady ? (
+        {!revealPair ? (
           <div className="absolute inset-0 z-[1] flex items-center justify-center bg-black/40">
-            <span className="text-[11px] font-medium text-white/55">加载中…</span>
+            <span className="text-[11px] font-medium text-white/55">{t("duel.loadingImg")}</span>
           </div>
         ) : null}
         <Image
@@ -221,27 +285,32 @@ function DuelCard({
           quality={82}
           className={cn(
             "object-cover transition duration-300",
-            !busy && "group-hover:scale-[1.02]",
-            !imageReady && "opacity-0"
+            revealPair && !busy && "group-hover:scale-[1.02]",
+            !revealPair && "opacity-0"
           )}
           sizes="(max-width:768px) 46vw, 50vw"
           onLoadingComplete={onImageReady}
           onError={onImageError}
         />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent opacity-90" />
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent opacity-90 transition-opacity duration-300",
+            !revealPair && "opacity-0"
+          )}
+        />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3">
           <span
             className={cn(
               "rounded-full bg-cyan-500/90 px-2 py-1 text-[10px] font-semibold text-slate-950 shadow-md transition duration-200 sm:px-3 sm:text-[11px]",
-              imageReady ? "opacity-0 group-hover:opacity-100 max-md:opacity-100 md:opacity-100" : "opacity-0"
+              revealPair ? "opacity-0 group-hover:opacity-100 max-md:opacity-100 md:opacity-100" : "opacity-0"
             )}
           >
-            点这张投票
+            {t("duel.tapToVote")}
           </span>
         </div>
       </div>
       <div className="flex items-center border-t border-white/10 bg-black/25 px-3 py-2.5">
-        <span className="text-[11px] text-white/45">{imageReady ? "轻触即投" : "请等待上图加载"}</span>
+        <span className="text-[11px] text-white/45">{revealPair ? t("duel.tapReady") : t("duel.tapWait")}</span>
       </div>
     </motion.button>
   );

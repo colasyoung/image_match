@@ -4,9 +4,11 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useLocale } from "@/contexts/LocaleProvider";
 import { Button } from "@/components/ui/button";
 import { ImagePickButton, ImageUploadHints } from "@/components/ImageUploadHints";
 import { useAdminUploadBypass } from "@/hooks/useAdminUploadBypass";
+import { friendlyApiError } from "@/lib/i18n/api-errors";
 import { ADMIN_UPLOAD_BYPASS_QUERY } from "@/lib/admin-upload-bypass";
 import { DEFAULT_MAX_IMAGES_PER_MATCH, effectiveImageCap } from "@/lib/match-limits";
 import { cn } from "@/lib/utils";
@@ -25,23 +27,6 @@ function filterImageFiles(raw: File[]): File[] {
       (Boolean(f.type) && f.type.startsWith("image/")) ||
       /\.(jpe?g|png|gif|webp|avif|hei[c|f]|heic)$/i.test(f.name)
   );
-}
-
-function friendlyApiError(raw: string): string {
-  const map: Record<string, string> = {
-    Unauthorized: "没有权限，请检查管理链接是否完整。",
-    "Not found": "找不到这场比赛。",
-    Bad: "请求无效，请刷新页面重试。",
-    "Need at least 2 images": "请先至少上传 2 张图片，再开启比赛。",
-    "Cannot activate from current state": "当前状态无法开启，请刷新页面后重试。",
-    "Max 10 images": "图片数量已达上限（未使用或无效的管理员免上限密钥时，每场比赛最多 10 张）。",
-  };
-  return map[raw] ?? raw;
-}
-
-function defaultTitleSuggestion(): string {
-  const d = new Date();
-  return `我的对战 · ${d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}`;
 }
 
 function StepBadge({ n, label, active, done }: { n: number; label: string; active: boolean; done: boolean }) {
@@ -71,19 +56,23 @@ function StepBadge({ n, label, active, done }: { n: number; label: string; activ
   );
 }
 
+function CreateSuspenseFallback() {
+  const { t } = useLocale();
+  return (
+    <div className="mx-auto max-w-xl px-4 py-16 text-center text-sm text-white/50">{t("create.loading")}</div>
+  );
+}
+
 export default function CreatePage() {
   return (
-    <Suspense
-      fallback={
-        <div className="mx-auto max-w-xl px-4 py-16 text-center text-sm text-white/50">加载中…</div>
-      }
-    >
+    <Suspense fallback={<CreateSuspenseFallback />}>
       <CreatePageInner />
     </Suspense>
   );
 }
 
 function CreatePageInner() {
+  const { t, locale } = useLocale();
   const search = useSearchParams();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -116,7 +105,15 @@ function CreatePageInner() {
   const canActivate = uploadedCount >= 2 && !loading;
   const imageCap = effectiveImageCap(adminUploadBypassToken);
   const slotsLeft = Math.max(0, imageCap - uploadedCount - queue.length);
-  const maxImagesLabel = adminUploadBypassToken.trim() ? "不限" : String(DEFAULT_MAX_IMAGES_PER_MATCH);
+  const maxImagesLabel = adminUploadBypassToken.trim() ? t("create.maxUnlimited") : String(DEFAULT_MAX_IMAGES_PER_MATCH);
+
+  const defaultTitleSuggestion = useCallback(() => {
+    const d = new Date();
+    return (
+      t("create.defaultTitlePrefix") +
+      d.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "numeric", day: "numeric" })
+    );
+  }, [locale, t]);
 
   useEffect(() => {
     uploadedCountLive.current = uploadedCount;
@@ -138,7 +135,7 @@ function CreatePageInner() {
       if (!raw.length) return;
       const images = filterImageFiles(raw);
       if (!images.length) {
-        setPickHint("没有发现图片文件，请选择 jpg、png、webp 等常见图片格式。");
+        setPickHint(t("create.hintNoFiles"));
         window.setTimeout(() => setPickHint(null), 4500);
         return;
       }
@@ -149,9 +146,7 @@ function CreatePageInner() {
         const room = Math.max(0, cap - u - prev.length);
         if (room <= 0) {
           hint =
-            cap > DEFAULT_MAX_IMAGES_PER_MATCH
-              ? "队列已满或已达浏览器单次可添加数量，请先点「上传」或删掉队列里的项。"
-              : "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
+            cap > DEFAULT_MAX_IMAGES_PER_MATCH ? t("create.hintQueueFullBypass") : t("create.hintQueueFull10");
           return prev;
         }
         const take = images.slice(0, room);
@@ -163,9 +158,9 @@ function CreatePageInner() {
           previewUrl: URL.createObjectURL(file),
         }));
         if (skipped > 0) {
-          hint = `已加入 ${take.length} 张；另有 ${skipped} 张因超出上限未加入。`;
+          hint = t("create.hintAddedTakeSkipped", { take: take.length, skipped });
         } else {
-          hint = `已加入 ${take.length} 张，当前队列 ${prev.length + take.length} 张（记得点下方「上传」）。`;
+          hint = t("create.hintAddedTakeQueue", { take: take.length, total: prev.length + take.length });
         }
         return [...prev, ...additions];
       });
@@ -174,7 +169,7 @@ function CreatePageInner() {
         window.setTimeout(() => setPickHint(null), 4500);
       }
     },
-    [adminUploadBypassToken]
+    [adminUploadBypassToken, t]
   );
 
   const addIncomingUrls = useCallback(
@@ -189,9 +184,7 @@ function CreatePageInner() {
         const room = Math.max(0, cap - u - prev.length);
         if (room <= 0) {
           hint =
-            cap > DEFAULT_MAX_IMAGES_PER_MATCH
-              ? "队列已满或已达浏览器单次可添加数量，请先点「上传」或删掉队列里的项。"
-              : "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
+            cap > DEFAULT_MAX_IMAGES_PER_MATCH ? t("create.hintQueueFullBypass") : t("create.hintQueueFull10");
           return prev;
         }
 
@@ -208,9 +201,7 @@ function CreatePageInner() {
         }
 
         if (!take.length) {
-          hint = unique.every((x) => already.has(x))
-            ? "这些网页图片链接已在队列中。"
-            : "没有可用空位添加更多链接。";
+          hint = unique.every((x) => already.has(x)) ? t("create.hintUrlsDup") : t("create.hintUrlsNoRoom");
           return prev;
         }
 
@@ -223,9 +214,9 @@ function CreatePageInner() {
 
         const dropped = unique.length - take.length;
         if (dropped > 0) {
-          hint = `已加入 ${take.length} 个网页图片链接；另有 ${dropped} 个因重复或超出上限未加入。`;
+          hint = t("create.hintUrlsPartial", { take: take.length, dropped });
         } else {
-          hint = `已加入 ${take.length} 个网页图片链接（点「上传」后由服务端拉取并传到图床）。`;
+          hint = t("create.hintUrlsAll", { take: take.length });
         }
         return [...prev, ...additions];
       });
@@ -234,7 +225,7 @@ function CreatePageInner() {
         window.setTimeout(() => setPickHint(null), 5000);
       }
     },
-    [adminUploadBypassToken]
+    [adminUploadBypassToken, t]
   );
 
   const removeFromQueue = useCallback((id: string) => {
@@ -271,7 +262,7 @@ function CreatePageInner() {
     setLoading(false);
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setErr(friendlyApiError(j.error ?? "创建失败"));
+      setErr(friendlyApiError(j.error ?? "", t) || t("api.CreateFail"));
       return;
     }
     const j = (await res.json()) as Created;
@@ -279,7 +270,7 @@ function CreatePageInner() {
     setPickHint(null);
     setCreated({ slug: j.slug, manageToken: j.manageToken, id: j.id });
     setActivatedSuccess(false);
-  }, [title, description, isPublic, clearQueueRevoke]);
+  }, [title, description, isPublic, clearQueueRevoke, t]);
 
   const uploadAll = useCallback(async () => {
     if (!created || queue.length === 0) return;
@@ -288,7 +279,7 @@ function CreatePageInner() {
     try {
       for (let i = 0; i < queue.length; i++) {
         const q = queue[i];
-        setUploadPhase(`正在上传第 ${i + 1} / ${queue.length} 张…`);
+        setUploadPhase(t("create.uploadProgress", { current: i + 1, total: queue.length }));
         const fd = new FormData();
         fd.set("matchId", created.id);
         fd.set("manageToken", created.manageToken);
@@ -302,22 +293,22 @@ function CreatePageInner() {
         const res = await fetch("/api/upload-image", { method: "POST", body: fd });
         if (!res.ok) {
           const j = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(j.error ?? "上传失败");
+          throw new Error(j.error ? friendlyApiError(String(j.error), t) : t("api.UploadFail"));
         }
       }
       setUploadPhase(null);
       clearQueueRevoke();
-      setPickHint("上传完成！若未满 2 张请继续添加；够了即可开启比赛。");
+      setPickHint(t("create.uploadDone"));
       window.setTimeout(() => setPickHint(null), 5000);
       await refreshUploaded(created);
     } catch (e) {
       setUploadPhase(null);
-      setErr(e instanceof Error ? e.message : "上传失败");
+      setErr(e instanceof Error ? e.message : t("api.UploadFail"));
       setLoading(false);
       return;
     }
     setLoading(false);
-  }, [created, queue, refreshUploaded, clearQueueRevoke, adminUploadBypassToken]);
+  }, [created, queue, refreshUploaded, clearQueueRevoke, adminUploadBypassToken, t]);
 
   const activate = useCallback(async () => {
     if (!created || uploadedCount < 2) return;
@@ -331,12 +322,12 @@ function CreatePageInner() {
     setLoading(false);
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setErr(friendlyApiError(j.error ?? "开启失败（至少需要 2 张图）"));
+      setErr(friendlyApiError(j.error ?? "", t) || t("create.activateFail"));
       return;
     }
     setErr(null);
     setActivatedSuccess(true);
-  }, [created, uploadedCount]);
+  }, [created, uploadedCount, t]);
 
   const manageUrl = useMemo(() => {
     if (!created) return "";
@@ -354,7 +345,7 @@ function CreatePageInner() {
         setCopied(kind);
         setTimeout(() => setCopied(null), 2500);
       },
-      () => setErr("复制失败，请长按链接手动复制")
+      () => setErr(t("create.copyFail"))
     );
   };
 
@@ -366,32 +357,29 @@ function CreatePageInner() {
     <div className="mx-auto max-w-xl space-y-8 px-4 py-10 pb-16">
       <div>
         <Link href="/" className="text-sm text-cyan-300/90 hover:underline">
-          ← 返回首页
+          {t("create.backHome")}
         </Link>
-        <h1 className="mt-4 text-2xl font-semibold text-white">创建一场对战</h1>
-        <p className="mt-2 text-sm leading-relaxed text-white/55">
-          不用注册。按下面三步走即可：<strong className="text-white/75">起名</strong> → <strong className="text-white/75">传图</strong>{" "}
-          → <strong className="text-white/75">开启</strong>。管理链接相当于密码，请复制保存。
-        </p>
+        <h1 className="mt-4 text-2xl font-semibold text-white">{t("create.pageTitle")}</h1>
+        <p className="mt-2 text-sm leading-relaxed text-white/55">{t("create.pageIntro")}</p>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-        <StepBadge n={1} label="起名字" active={!step1Done} done={step1Done} />
-        <StepBadge n={2} label="传至少 2 张图" active={step1Done && !step2Done && !step3Done} done={step2Done || step3Done} />
-        <StepBadge n={3} label="开启投票" active={step1Done && step2Done && !step3Done} done={step3Done} />
+        <StepBadge n={1} label={t("create.stepName")} active={!step1Done} done={step1Done} />
+        <StepBadge n={2} label={t("create.stepUpload")} active={step1Done && !step2Done && !step3Done} done={step2Done || step3Done} />
+        <StepBadge n={3} label={t("create.stepActivate")} active={step1Done && step2Done && !step3Done} done={step3Done} />
       </div>
 
       {!created ? (
         <div className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
           <div>
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-white/85">对战标题</span>
-              <span className="text-xs text-white/45">会显示在投票页顶部，随时可在管理页修改。</span>
+              <span className="text-sm font-medium text-white/85">{t("create.titleLabel")}</span>
+              <span className="text-xs text-white/45">{t("create.titleHint")}</span>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none ring-cyan-400/40 focus:ring-2"
-                placeholder="例如：周末咖啡杯选美"
+                placeholder={t("create.placeholderTitle")}
                 autoComplete="off"
               />
             </label>
@@ -401,7 +389,7 @@ function CreatePageInner() {
                 className="text-xs text-cyan-300/85 hover:underline"
                 onClick={() => setTitle(defaultTitleSuggestion())}
               >
-                帮我填一个标题
+                {t("create.suggestTitle")}
               </button>
             </div>
           </div>
@@ -409,18 +397,18 @@ function CreatePageInner() {
           <details className="group rounded-xl border border-white/10 bg-black/20 px-3 py-2">
             <summary className="cursor-pointer list-none py-1 text-sm text-white/70 marker:content-none [&::-webkit-details-marker]:hidden">
               <span className="underline decoration-white/20 underline-offset-2 group-open:decoration-cyan-400/50">
-                可选：简介、是否在首页展示
+                {t("create.optionalDetails")}
               </span>
             </summary>
             <div className="space-y-3 border-t border-white/10 pt-3">
               <label className="block space-y-1">
-                <span className="text-xs text-white/55">简介（选填）</span>
+                <span className="text-xs text-white/55">{t("create.descLabel")}</span>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
                   className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none ring-cyan-400/40 focus:ring-2"
-                  placeholder="一两句话说明玩法或主题…"
+                  placeholder={t("create.placeholderDesc")}
                 />
               </label>
               <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
@@ -431,8 +419,8 @@ function CreatePageInner() {
                   onChange={(e) => setIsPublic(e.target.checked)}
                 />
                 <span>
-                  <span className="text-sm text-white/85">在首页「发现」里展示这场对战</span>
-                  <span className="mt-0.5 block text-xs text-white/45">关闭后只能通过你分享的投票链接访问。</span>
+                  <span className="text-sm text-white/85">{t("create.publicLabel")}</span>
+                  <span className="mt-0.5 block text-xs text-white/45">{t("create.publicHint")}</span>
                 </span>
               </label>
             </div>
@@ -445,17 +433,19 @@ function CreatePageInner() {
             className="min-h-12 w-full text-base font-semibold"
             onClick={() => void create()}
           >
-            {loading ? "正在创建…" : "下一步：创建草稿"}
+            {loading ? t("create.creating") : t("create.createDraft")}
           </Button>
         </div>
       ) : (
         <div className="space-y-6">
           <div className="rounded-2xl border-2 border-amber-400/40 bg-amber-500/10 p-5 text-sm text-amber-50 shadow-lg shadow-amber-900/20">
-            <p className="text-base font-semibold text-amber-100">第 1 件事：复制并保存「管理链接」</p>
+            <p className="text-base font-semibold text-amber-100">{t("create.manageFirstTitle")}</p>
             <p className="mt-2 text-xs leading-relaxed text-amber-100/85">
-              这是你<strong>以后改标题、删图、暂停或结束（删除）比赛</strong>的唯一入口，和投票页不是同一个链接。
-              <strong className="text-amber-50"> 丢了没法找回</strong>
-              （若配置了总站入口 <code className="rounded bg-black/30 px-1">/admin?key=…</code>，见 README）。
+              {t("create.manageFirstLead")}
+              <strong className="text-amber-100/95">{t("create.manageFirstBold")}</strong>
+              {t("create.manageAfterBold")}
+              <strong className="text-amber-50">{t("create.manageLost")}</strong>
+              {t("create.manageFirstTail")}
             </p>
             <p className="mt-3 break-all rounded-lg bg-black/35 p-3 font-mono text-[11px] leading-snug text-cyan-100/95">
               {manageUrl}
@@ -466,18 +456,18 @@ function CreatePageInner() {
                 className="!min-h-11 !bg-amber-400/90 !px-5 !text-sm !font-semibold !text-slate-950 hover:!bg-amber-300"
                 onClick={() => copyText(manageUrl, "manage")}
               >
-                {copied === "manage" ? "已复制" : "复制管理链接"}
+                {copied === "manage" ? t("create.copiedManage") : t("create.copyManage")}
               </Button>
               <Link
                 href={`/manage/${created.slug}?token=${encodeURIComponent(created.manageToken)}`}
                 className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/20 bg-white/10 px-4 text-xs font-medium text-white hover:bg-white/15"
               >
-                打开管理页
+                {t("create.openManage")}
               </Link>
             </div>
 
             <div className="mt-5 rounded-xl border border-white/10 bg-black/25 p-3">
-              <p className="text-xs font-medium text-white/70">发给朋友投票用这个（不含管理权限）</p>
+              <p className="text-xs font-medium text-white/70">{t("create.voteForFriends")}</p>
               <p className="mt-1 break-all font-mono text-[11px] text-cyan-100/90">{voteUrl}</p>
               <Button
                 type="button"
@@ -485,17 +475,15 @@ function CreatePageInner() {
                 className="mt-3 !min-h-9 !text-xs"
                 onClick={() => copyText(voteUrl, "vote")}
               >
-                {copied === "vote" ? "投票链接已复制" : "复制投票链接"}
+                {copied === "vote" ? t("create.copiedVote") : t("create.copyVote")}
               </Button>
             </div>
           </div>
 
           {activatedSuccess ? (
             <div className="space-y-4 rounded-2xl border-2 border-emerald-400/50 bg-emerald-500/15 p-6 shadow-lg shadow-emerald-900/30">
-              <p className="text-lg font-semibold text-emerald-50">可以了，大家已经能来投票了</p>
-              <p className="text-sm leading-relaxed text-emerald-100/85">
-                页面没有自动跳转，方便你先把<strong>管理链接</strong>存到备忘录或发给自己。
-              </p>
+              <p className="text-lg font-semibold text-emerald-50">{t("create.successTitle")}</p>
+              <p className="text-sm leading-relaxed text-emerald-100/85">{t("create.successBody")}</p>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Button
                   type="button"
@@ -503,19 +491,19 @@ function CreatePageInner() {
                   className="min-h-11 px-6 text-base"
                   onClick={() => copyText(manageUrl, "manage")}
                 >
-                  {copied === "manage" ? "管理链接已复制" : "再复制一次管理链接"}
+                  {copied === "manage" ? t("create.manageCopiedShort") : t("create.copyManageAgain")}
                 </Button>
                 <Link
                   href={`/m/${created.slug}`}
                   className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-6 text-base font-semibold text-slate-900 shadow hover:bg-white/90"
                 >
-                  进入投票页看看
+                  {t("create.goVote")}
                 </Link>
                 <Link
                   href={`/manage/${created.slug}?token=${encodeURIComponent(created.manageToken)}`}
                   className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/25 px-6 text-base font-medium text-white hover:bg-white/10"
                 >
-                  去管理页继续传图
+                  {t("create.goManageMore")}
                 </Link>
               </div>
             </div>
@@ -524,24 +512,13 @@ function CreatePageInner() {
               <ImageUploadHints compact />
 
               <details className="rounded-xl border border-amber-400/25 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-100/85">
-                <summary className="cursor-pointer select-none font-medium text-amber-200/95">管理员：免 10 张上限</summary>
-                <p className="mt-2 leading-relaxed text-amber-100/75">
-                  在 Vercel 配置 <code className="rounded bg-black/35 px-1">ADMIN_IMAGE_UPLOAD_BYPASS_SECRET</code>
-                  （与 <code className="rounded bg-black/35 px-1">MASTER_ADMIN_SECRET</code> 无关）。知道该密钥的人可在地址栏附加查询参数{" "}
-                  <code className="rounded bg-black/35 px-1">
-                    ?{ADMIN_UPLOAD_BYPASS_QUERY}=密钥
-                  </code>
-                  （若已有 <code className="rounded bg-black/35 px-1">?</code> 则用{" "}
-                  <code className="rounded bg-black/35 px-1">&amp;{ADMIN_UPLOAD_BYPASS_QUERY}=密钥</code>
-                  ），与下方输入框二选一；会写入本机 sessionStorage。
-                  <span className="text-amber-200/70"> 勿把带此参数的链接发给他人（会进历史记录与 Referer）。</span>
-                  未配置或密钥错误时服务端仍按 10 张拒绝。
-                </p>
+                <summary className="cursor-pointer select-none font-medium text-amber-200/95">{t("create.adminSummary")}</summary>
+                <p className="mt-2 leading-relaxed text-amber-100/75">{t("create.adminBody")}</p>
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <input
                     type="password"
                     autoComplete="off"
-                    placeholder="管理员免上限密钥"
+                    placeholder={t("create.adminPlaceholder")}
                     value={adminUploadBypassToken}
                     onChange={(e) => setAdminUploadBypassToken(e.target.value)}
                     className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35"
@@ -552,7 +529,7 @@ function CreatePageInner() {
                     className="shrink-0 text-xs text-white/55"
                     onClick={() => setAdminUploadBypassToken("")}
                   >
-                    清除
+                    {t("create.clear")}
                   </Button>
                 </div>
               </details>
@@ -560,9 +537,9 @@ function CreatePageInner() {
               <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
-                    <h2 className="text-sm font-medium text-white">第 2 件事：上传图片</h2>
+                    <h2 className="text-sm font-medium text-white">{t("create.uploadTitle")}</h2>
                     <p className="mt-1 text-xs text-white/50">
-                      至少 2 张才能开启；普通用户每场比赛最多 {DEFAULT_MAX_IMAGES_PER_MATCH} 张，填写上方管理员密钥后不限张数（以服务端校验为准）。
+                      {t("create.uploadHint", { max: DEFAULT_MAX_IMAGES_PER_MATCH })}
                     </p>
                   </div>
                   <div
@@ -571,8 +548,8 @@ function CreatePageInner() {
                       uploadedCount >= 2 ? "bg-emerald-500/20 text-emerald-100" : "bg-white/10 text-amber-100/90"
                     )}
                   >
-                    已上传 {uploadedCount} / {maxImagesLabel} 张
-                    {uploadedCount < 2 ? ` · 还差 ${needMore} 张` : " · 可以开启了"}
+                    {t("create.uploaded", { count: uploadedCount, max: maxImagesLabel })}
+                    {uploadedCount < 2 ? t("create.needMore", { n: needMore }) : t("create.readyOpen")}
                   </div>
                 </div>
 
@@ -609,14 +586,12 @@ function CreatePageInner() {
                   label={
                     slotsLeft <= 0
                       ? adminUploadBypassToken.trim()
-                        ? "暂无可添加空位（请先上传队列）"
-                        : "已达 10 张上限"
-                      : "点这里选择照片，或从本机/网页拖入"
+                        ? t("create.pickNoSlotBypass")
+                        : t("create.pickNoSlot10")
+                      : t("create.pickLabel")
                   }
                   subLabel={
-                    slotsLeft <= 0
-                      ? "请先上传或删掉队列里的图"
-                      : `还可再添加约 ${slotsLeft} 个空位（含当前队列）；网页拖入会先加入队列，点上传后服务端再拉图`
+                    slotsLeft <= 0 ? t("create.pickSubWait") : t("create.pickSubFull", { n: slotsLeft })
                   }
                   onFiles={addIncomingFiles}
                   onWebImageUrls={addIncomingUrls}
@@ -624,9 +599,7 @@ function CreatePageInner() {
 
                 {queue.length > 0 ? (
                   <div className="space-y-2">
-                    <p className="text-center text-xs text-white/50">
-                      待上传队列（{queue.length} 张）— 选好之后点下方「上传」才会真正传到比赛里
-                    </p>
+                    <p className="text-center text-xs text-white/50">{t("create.queueTitle", { n: queue.length })}</p>
                     <ul className="flex flex-wrap justify-center gap-2">
                       {queue.map((q) => (
                         <li key={q.id} className="relative">
@@ -638,7 +611,7 @@ function CreatePageInner() {
                             type="button"
                             className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/80 text-[10px] text-white shadow hover:bg-red-500/90"
                             onClick={() => removeFromQueue(q.id)}
-                            aria-label="从队列移除"
+                            aria-label={t("create.removeQueueAria")}
                           >
                             ×
                           </button>
@@ -658,15 +631,15 @@ function CreatePageInner() {
                     onClick={() => void uploadAll()}
                   >
                     {loading && queue.length > 0
-                      ? "正在上传…"
+                      ? t("create.uploading")
                       : queue.length
-                        ? `上传这 ${queue.length} 张到比赛`
-                        : "请先选择或拖入图片"}
+                        ? t("create.uploadN", { n: queue.length })
+                        : t("create.chooseFirst")}
                   </Button>
 
                   <div className="rounded-xl border border-white/10 bg-black/25 p-4">
-                    <p className="text-xs font-medium text-white/60">第 3 件事：开启投票</p>
-                    <p className="mt-1 text-[11px] text-white/40">开启后路人就能打开投票页；你仍可用管理链接随时暂停。</p>
+                    <p className="text-xs font-medium text-white/60">{t("create.activateTitle")}</p>
+                    <p className="mt-1 text-[11px] text-white/40">{t("create.activateHint")}</p>
                     <Button
                       variant="success"
                       disabled={!canActivate}
@@ -674,10 +647,10 @@ function CreatePageInner() {
                       onClick={() => void activate()}
                     >
                       {uploadedCount < 2
-                        ? `还差 ${needMore} 张图才能开启`
+                        ? t("create.needNToOpen", { n: needMore })
                         : loading
-                          ? "处理中…"
-                          : "开启比赛，让大家来投票"}
+                          ? t("create.processing")
+                          : t("create.activateBtn")}
                     </Button>
                   </div>
                 </div>

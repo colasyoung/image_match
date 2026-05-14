@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
+import { useLocale } from "@/contexts/LocaleProvider";
+import { friendlyApiError } from "@/lib/i18n/api-errors";
 import { Button } from "@/components/ui/button";
 
 export type AdminMatchRow = {
@@ -21,6 +23,7 @@ function absUrl(origin: string, path: string) {
 }
 
 export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; origin: string }) {
+  const { t } = useLocale();
   const router = useRouter();
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -30,21 +33,17 @@ export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; ori
     window.setTimeout(() => setFlash(null), 2200);
   }, []);
 
-  const copyText = async (label: string, text: string) => {
+  const copyText = async (labelKey: "admin.labelManage" | "admin.labelVote", text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast(`已复制：${label}`);
+      toast(t("admin.copied", { label: t(labelKey) }));
     } catch {
-      toast("复制失败，请手动选择链接");
+      toast(t("admin.copyFail"));
     }
   };
 
   const deleteRow = async (row: AdminMatchRow) => {
-    if (
-      !confirm(
-        `确定删除比赛「${row.title}」及全部图片、投票记录？\n此操作不可恢复。`
-      )
-    ) {
+    if (!confirm(t("admin.confirmDelete", { title: row.title }))) {
       return;
     }
     setBusySlug(row.slug);
@@ -56,10 +55,10 @@ export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; ori
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
-        toast(j.error ?? "删除失败");
+        toast(j.error ? friendlyApiError(String(j.error), t) : t("admin.deleteFail"));
         return;
       }
-      toast("已删除");
+      toast(t("admin.deleted"));
       router.refresh();
     } finally {
       setBusySlug(null);
@@ -78,13 +77,13 @@ export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; ori
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-white/10 text-xs uppercase tracking-wide text-white/50">
             <tr>
-              <th className="px-3 py-3">标题</th>
-              <th className="px-3 py-3">slug</th>
-              <th className="px-3 py-3">状态</th>
-              <th className="px-3 py-3 text-right">图片</th>
-              <th className="px-3 py-3 text-right">票数</th>
-              <th className="px-3 py-3 text-right">浏览</th>
-              <th className="px-3 py-3">管理</th>
+              <th className="px-3 py-3">{t("admin.thTitle")}</th>
+              <th className="px-3 py-3">{t("admin.thSlug")}</th>
+              <th className="px-3 py-3">{t("admin.thStatus")}</th>
+              <th className="px-3 py-3 text-right">{t("admin.thImages")}</th>
+              <th className="px-3 py-3 text-right">{t("admin.thVotes")}</th>
+              <th className="px-3 py-3 text-right">{t("admin.thViews")}</th>
+              <th className="px-3 py-3">{t("admin.thManage")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -105,25 +104,25 @@ export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; ori
                   <td className="px-3 py-2.5">
                     <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center">
                       <Link href={managePath} className="text-cyan-300/90 underline hover:text-cyan-200">
-                        打开管理
+                        {t("admin.openManage")}
                       </Link>
                       <Button
                         type="button"
                         variant="outline"
                         className="!h-8 !min-h-0 !px-2.5 !py-1 !text-[11px]"
                         disabled={busy}
-                        onClick={() => void copyText("管理页链接", manageAbs)}
+                        onClick={() => void copyText("admin.labelManage", manageAbs)}
                       >
-                        复制管理
+                        {t("admin.copyManage")}
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         className="!h-8 !min-h-0 !px-2.5 !py-1 !text-[11px]"
                         disabled={busy}
-                        onClick={() => void copyText("投票页链接", voteAbs)}
+                        onClick={() => void copyText("admin.labelVote", voteAbs)}
                       >
-                        复制投票
+                        {t("admin.copyVote")}
                       </Button>
                       <Button
                         type="button"
@@ -132,7 +131,7 @@ export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; ori
                         disabled={busy}
                         onClick={() => void deleteRow(m)}
                       >
-                        {busy ? "删除中…" : "删除"}
+                        {busy ? t("admin.deleting") : t("admin.delete")}
                       </Button>
                     </div>
                   </td>
@@ -142,7 +141,7 @@ export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; ori
           </tbody>
         </table>
         {rows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-white/45">暂无比赛</p>
+          <p className="px-4 py-8 text-center text-sm text-white/45">{t("admin.emptyList")}</p>
         ) : null}
       </div>
     </div>

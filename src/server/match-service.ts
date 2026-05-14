@@ -443,6 +443,8 @@ export async function listMatchesHome(): Promise<
     activeVoters: number;
     hotScore: number;
     hotScoreAlt: number;
+    /** 当前 Elo 最高的图片 URL（用于首页封面）；无图时为 null */
+    listingCover: string | null;
   }[]
 > {
   const admin = createAdminClient();
@@ -484,13 +486,31 @@ export async function listMatchesHome(): Promise<
     voters10.get(b.match_id)!.add(b.voter_ip_hash);
   }
 
+  const { data: homeImages } = await admin
+    .from("images")
+    .select("match_id, elo_rating, thumb_url, image_url")
+    .in("match_id", ids);
+
+  const topImageByMatch = new Map<string, { elo: number; url: string }>();
+  for (const img of homeImages ?? []) {
+    const elo = Number(img.elo_rating ?? 0);
+    const url = (img.image_url || img.thumb_url || "").trim();
+    if (!url) continue;
+    const mid = img.match_id as string;
+    const prev = topImageByMatch.get(mid);
+    if (!prev || elo > prev.elo) {
+      topImageByMatch.set(mid, { elo, url });
+    }
+  }
+
   return matches.map((m) => {
     const v24 = votes24.get(m.id) ?? 0;
     const online = voters10.get(m.id)?.size ?? 0;
     const views = m.view_count ?? 0;
     const hotScore = v24 * 0.5 + online * 0.3 + views * 0.2;
     const hotScoreAlt = v24 * 0.7 + online * 0.3;
-    return { match: m as MatchRow, votes24h: v24, activeVoters: online, hotScore, hotScoreAlt };
+    const listingCover = topImageByMatch.get(m.id)?.url ?? null;
+    return { match: m as MatchRow, votes24h: v24, activeVoters: online, hotScore, hotScoreAlt, listingCover };
   });
 }
 

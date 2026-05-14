@@ -1,6 +1,8 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { AdminMatchesTable, type AdminMatchRow } from "@/components/AdminMatchesTable";
+import { getServerLocale } from "@/lib/i18n/server-locale";
+import { translateStatic } from "@/lib/i18n/translate-static";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +41,8 @@ export default async function MasterAdminPage({
     notFound();
   }
 
+  const locale = await getServerLocale();
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("matches")
@@ -49,7 +53,8 @@ export default async function MasterAdminPage({
   if (error) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10 text-red-300">
-        读取失败：{error.message}
+        {translateStatic(locale, "admin.readFail")}
+        {error.message}
       </div>
     );
   }
@@ -74,24 +79,16 @@ export default async function MasterAdminPage({
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-10">
       <div>
-        <h1 className="text-xl font-semibold text-white">总站管理</h1>
-        <p className="mt-2 text-sm text-amber-200/90">
-          仅主管理员使用：请勿公开此页面的完整 URL（含 key）。每个比赛仍依赖各自的 manage_token；此处只是集中列出链接与数据。
-        </p>
-        <p className="mt-1 text-xs text-white/45">
-          单个比赛管理页路径：<code className="text-cyan-200/90">/manage/&lt;slug&gt;?token=&lt;token&gt;</code>
-          ，公开投票页：<code className="text-cyan-200/90">/m/&lt;slug&gt;</code>
-        </p>
+        <h1 className="text-xl font-semibold text-white">{translateStatic(locale, "admin.title")}</h1>
+        <p className="mt-2 text-sm text-amber-200/90">{translateStatic(locale, "admin.warn")}</p>
+        <p className="mt-1 text-xs text-white/45">{translateStatic(locale, "admin.pathLine")}</p>
       </div>
 
       <AdminMatchesTable rows={rows} origin={origin} />
 
       <p className="text-xs text-white/35">
-        提示：在环境变量中设置 `MASTER_ADMIN_SECRET`（足够长的随机串），访问{" "}
-        <code className="text-white/55">/admin?key=该值</code>。
-        <span className="mt-1 block text-white/30">
-          「浏览」为投票页累计打开次数（与票数不同）；「图片」为当前图库张数。
-        </span>
+        {translateStatic(locale, "admin.footer1")}
+        <span className="mt-1 block text-white/30">{translateStatic(locale, "admin.footer2")}</span>
       </p>
     </div>
   );

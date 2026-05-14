@@ -4,9 +4,12 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useLocale } from "@/contexts/LocaleProvider";
 import { Button } from "@/components/ui/button";
 import { ImagePickButton, ImageUploadHints } from "@/components/ImageUploadHints";
 import { useAdminUploadBypass } from "@/hooks/useAdminUploadBypass";
+import { friendlyApiError } from "@/lib/i18n/api-errors";
+import { FETCH_LOAD_TIMEOUT_MS, fetchWithTimeout, isAbortError } from "@/lib/fetch-with-timeout";
 import { ADMIN_UPLOAD_BYPASS_QUERY } from "@/lib/admin-upload-bypass";
 import { DEFAULT_MAX_IMAGES_PER_MATCH, effectiveImageCap } from "@/lib/match-limits";
 import { cn } from "@/lib/utils";
@@ -31,30 +34,34 @@ type MatchApi = {
   }[];
 };
 
-const STATUS_META: Record<string, { label: string; hint: string; pill: string }> = {
-  draft: {
-    label: "草稿",
-    hint: "上传至少 2 张图后可开启比赛；未开启时投票页对他人不可见。",
-    pill: "border-slate-400/40 bg-slate-500/20 text-slate-100",
-  },
-  active: {
-    label: "进行中",
-    hint: "用户可进行 1v1 投票；排行榜实时更新。",
-    pill: "border-emerald-400/55 bg-emerald-500/25 text-emerald-50 shadow-[0_0_24px_-4px_rgba(52,211,153,0.35)]",
-  },
-  paused: {
-    label: "已暂停",
-    hint: "投票已关闭；可继续，或结束比赛（将永久删除本场全部数据）。若删图后不足 2 张，系统会自动暂停。",
-    pill: "border-amber-400/50 bg-amber-500/20 text-amber-50",
-  },
-  ended: {
-    label: "已结束",
-    hint: "本场已关闭，用户无法再投票。若不再需要，可删除以清理数据库中的记录。",
-    pill: "border-rose-400/45 bg-rose-500/20 text-rose-50",
-  },
-};
-
 export function ManageClient({ slug }: { slug: string }) {
+  const { t } = useLocale();
+  const statusMeta = useMemo(
+    () => ({
+      draft: {
+        label: t("status.draftLabel"),
+        hint: t("status.draftHint"),
+        pill: "border-slate-400/40 bg-slate-500/20 text-slate-100",
+      },
+      active: {
+        label: t("status.activeLabel"),
+        hint: t("status.activeHint"),
+        pill: "border-emerald-400/55 bg-emerald-500/25 text-emerald-50 shadow-[0_0_24px_-4px_rgba(52,211,153,0.35)]",
+      },
+      paused: {
+        label: t("status.pausedLabel"),
+        hint: t("status.pausedHint"),
+        pill: "border-amber-400/50 bg-amber-500/20 text-amber-50",
+      },
+      ended: {
+        label: t("status.endedLabel"),
+        hint: t("status.endedHint"),
+        pill: "border-rose-400/45 bg-rose-500/20 text-rose-50",
+      },
+    }),
+    [t]
+  );
+
   const search = useSearchParams();
   const token = useMemo(() => search.get("token") ?? "", [search]);
   const [data, setData] = useState<MatchApi | null>(null);
@@ -65,6 +72,7 @@ export function ManageClient({ slug }: { slug: string }) {
   const [copiedVoteUrl, setCopiedVoteUrl] = useState(false);
   const [copiedAudienceUrl, setCopiedAudienceUrl] = useState(false);
   const [momentsHint, setMomentsHint] = useState<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
 
   const { adminUploadBypassToken, setAdminUploadBypassToken } = useAdminUploadBypass();
 
@@ -89,24 +97,43 @@ export function ManageClient({ slug }: { slug: string }) {
   const load = useCallback(async () => {
     await Promise.resolve();
     if (!token) {
-      setErr("缺少 token 参数");
+      setErr(t("manage.noToken"));
       return;
     }
     setErr(null);
-    const res = await fetch(`/api/matches/${slug}?token=${encodeURIComponent(token)}`);
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(
+        `/api/matches/${slug}?token=${encodeURIComponent(token)}`,
+        undefined,
+        FETCH_LOAD_TIMEOUT_MS
+      );
+    } catch (e) {
+      if (isAbortError(e)) {
+        void load();
+        return;
+      }
+      setErr(t("manage.loadFail"));
+      setData(null);
+      return;
+    }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error ?? "加载失败");
+      setErr(j.error ? friendlyApiError(String(j.error), t) : t("manage.loadFail"));
       setData(null);
       return;
     }
     setData(await res.json());
-  }, [slug, token]);
+  }, [slug, token, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch schedules state updates after network I/O
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (data) setTitleDraft(data.match.title);
+  }, [data]);
 
   const patch = async (body: Record<string, unknown>) => {
     if (!token) return;
@@ -119,7 +146,7 @@ export function ManageClient({ slug }: { slug: string }) {
     setLoading(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error ?? "操作失败");
+      setErr(j.error ? friendlyApiError(String(j.error), t) : t("manage.opFail"));
       return;
     }
     setErr(null);
@@ -129,14 +156,10 @@ export function ManageClient({ slug }: { slug: string }) {
   /** 与「结束比赛」相同：永久删除本场比赛（二次确认） */
   const deleteMatchPermanently = async () => {
     if (!token) return;
-    if (
-      !confirm(
-        "「结束比赛」会永久删除本场比赛及全部投票、排行榜与图片记录，不可恢复。确定继续？"
-      )
-    ) {
+    if (!confirm(t("manage.deleteMatch1"))) {
       return;
     }
-    if (!confirm("最后确认：删除后投票链接将立即失效。点击「确定」立即永久删除。")) return;
+    if (!confirm(t("manage.deleteMatch2"))) return;
     setLoading(true);
     const res = await fetch(`/api/matches/${slug}`, {
       method: "DELETE",
@@ -146,14 +169,14 @@ export function ManageClient({ slug }: { slug: string }) {
     setLoading(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error ?? "删除失败");
+      setErr(j.error ? friendlyApiError(String(j.error), t) : t("manage.deleteFail"));
       return;
     }
     window.location.href = "/";
   };
 
   const deleteImage = async (imageId: string) => {
-    if (!token || !confirm("确定删除这张图片？相关对战记录会随数据库级联清理。")) return;
+    if (!token || !confirm(t("manage.confirmDeleteImg"))) return;
     setLoading(true);
     const res = await fetch(
       `/api/matches/${slug}/images/${imageId}?token=${encodeURIComponent(token)}`,
@@ -162,7 +185,7 @@ export function ManageClient({ slug }: { slug: string }) {
     setLoading(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error ?? "删除图片失败");
+      setErr(j.error ? friendlyApiError(String(j.error), t) : t("manage.deleteImgFail"));
       return;
     }
     setErr(null);
@@ -173,7 +196,7 @@ export function ManageClient({ slug }: { slug: string }) {
     if (!token || !data || !files?.length) return;
     const cap = effectiveImageCap(adminUploadBypassToken);
     if (data.images.length >= cap) {
-      setErr(adminUploadBypassToken.trim() ? "已达当前模式下的图片数量上限" : "最多 10 张图片");
+      setErr(adminUploadBypassToken.trim() ? t("manage.atCapBypass") : t("manage.atCap10"));
       return;
     }
     setUploading(true);
@@ -190,11 +213,11 @@ export function ManageClient({ slug }: { slug: string }) {
         const res = await fetch("/api/upload-image", { method: "POST", body: fd });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
-          throw new Error(j.error ?? "上传失败");
+          throw new Error(j.error ? friendlyApiError(String(j.error), t) : t("api.UploadFail"));
         }
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "上传失败");
+      setErr(e instanceof Error ? e.message : t("api.UploadFail"));
       setUploading(false);
       return;
     }
@@ -206,7 +229,7 @@ export function ManageClient({ slug }: { slug: string }) {
     if (!token || !data || !urls.length) return;
     const cap = effectiveImageCap(adminUploadBypassToken);
     if (data.images.length >= cap) {
-      setErr(adminUploadBypassToken.trim() ? "已达当前模式下的图片数量上限" : "最多 10 张图片");
+      setErr(adminUploadBypassToken.trim() ? t("manage.atCapBypass") : t("manage.atCap10"));
       return;
     }
     const room = cap - data.images.length;
@@ -226,11 +249,11 @@ export function ManageClient({ slug }: { slug: string }) {
         const res = await fetch("/api/upload-image", { method: "POST", body: fd });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
-          throw new Error(j.error ?? "上传失败");
+          throw new Error(j.error ? friendlyApiError(String(j.error), t) : t("api.UploadFail"));
         }
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "上传失败");
+      setErr(e instanceof Error ? e.message : t("api.UploadFail"));
       setUploading(false);
       await load();
       return;
@@ -240,20 +263,20 @@ export function ManageClient({ slug }: { slug: string }) {
   };
 
   const status = data?.match.status ?? "";
-  const meta = STATUS_META[status] ?? STATUS_META.draft;
+  const meta = statusMeta[status as keyof typeof statusMeta] ?? statusMeta.draft;
   const canActivate = (data?.images.length ?? 0) >= 2;
   const isEnded = status === "ended";
   const imageCap = data ? effectiveImageCap(adminUploadBypassToken) : DEFAULT_MAX_IMAGES_PER_MATCH;
-  const maxImagesLabel = adminUploadBypassToken.trim() ? "不限" : String(DEFAULT_MAX_IMAGES_PER_MATCH);
+  const maxImagesLabel = adminUploadBypassToken.trim() ? t("create.maxUnlimited") : String(DEFAULT_MAX_IMAGES_PER_MATCH);
   const atImageCap = data ? data.images.length >= imageCap : false;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-10">
       <div>
         <Link href="/" className="text-sm text-cyan-300/90 hover:underline">
-          ← 首页
+          {t("manage.backHome")}
         </Link>
-        <h1 className="mt-4 text-2xl font-semibold text-white">比赛管理</h1>
+        <h1 className="mt-4 text-2xl font-semibold text-white">{t("manage.pageTitle")}</h1>
         <p className="mt-1 text-sm text-white/45">slug: {slug}</p>
       </div>
 
@@ -262,21 +285,18 @@ export function ManageClient({ slug }: { slug: string }) {
       ) : null}
 
       {!token ? (
-        <p className="text-white/50">请在 URL 中附带 <code className="text-cyan-200/90">?token=</code> 管理密钥。</p>
+        <p className="text-white/50">{t("manage.needToken")}</p>
       ) : !data ? (
-        <p className="text-white/50">加载中…</p>
+        <p className="text-white/50">{t("manage.loading")}</p>
       ) : (
         <>
           {pageUrl ? (
             <div className="rounded-2xl border-2 border-amber-400/35 bg-amber-500/10 p-4 shadow-md shadow-amber-950/40">
-              <p className="text-sm font-medium text-amber-100">请收藏本页完整链接（含 token）</p>
-              <p className="mt-1 text-xs text-amber-100/75">
-                投票页 <code className="rounded bg-black/30 px-1">/m/{slug}</code>{" "}
-                没有管理入口；丢失下方链接将无法再管理本场比赛。
-              </p>
+              <p className="text-sm font-medium text-amber-100">{t("manage.favoritelinkTitle")}</p>
+              <p className="mt-1 text-xs text-amber-100/75">{t("manage.favoritelinkBody", { slug })}</p>
               {votePageUrl ? (
                 <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3">
-                  <p className="text-[11px] font-medium text-white/60">投票页链接（发给参与者）</p>
+                  <p className="text-[11px] font-medium text-white/60">{t("manage.voteLinkLabel")}</p>
                   <code className="mt-1 block max-h-20 overflow-auto break-all text-[10px] leading-relaxed text-cyan-100/90">
                     {votePageUrl}
                   </code>
@@ -290,15 +310,15 @@ export function ManageClient({ slug }: { slug: string }) {
                           setCopiedVoteUrl(true);
                           setTimeout(() => setCopiedVoteUrl(false), 2500);
                         },
-                        () => setErr("复制投票链接失败，请手动复制上方地址")
+                        () => setErr(t("manage.copyVoteFail"))
                       );
                     }}
                   >
-                    {copiedVoteUrl ? "投票链接已复制" : "复制投票页链接"}
+                    {copiedVoteUrl ? t("manage.copiedVote") : t("manage.copyVote")}
                   </Button>
                 </div>
               ) : null}
-              <p className="mt-3 text-[11px] text-amber-100/65">本页管理链接（仅自己保留）：</p>
+              <p className="mt-3 text-[11px] text-amber-100/65">{t("manage.manageLinkLabel")}</p>
               <code className="mt-2 block max-h-24 overflow-auto break-all rounded-lg bg-black/40 p-2 text-[10px] leading-relaxed text-cyan-100/90">
                 {pageUrl}
               </code>
@@ -311,11 +331,11 @@ export function ManageClient({ slug }: { slug: string }) {
                       setCopiedPageUrl(true);
                       setTimeout(() => setCopiedPageUrl(false), 2500);
                     },
-                    () => setErr("复制失败，请手动选择地址栏链接")
+                    () => setErr(t("manage.copyPageFail"))
                   );
                 }}
               >
-                {copiedPageUrl ? "已复制" : "复制本页管理链接"}
+                {copiedPageUrl ? t("manage.copied") : t("manage.copyManage")}
               </Button>
             </div>
           ) : null}
@@ -324,8 +344,41 @@ export function ManageClient({ slug }: { slug: string }) {
           <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-white/40">当前状态</p>
-                <h2 className="mt-1 text-lg font-medium text-white">{data.match.title}</h2>
+                <p className="text-xs font-medium uppercase tracking-wide text-white/40">{t("manage.currentStatus")}</p>
+                <label className="mt-2 block space-y-1">
+                  <span className="text-xs text-white/45">{t("manage.matchTitle")}</span>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <input
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      maxLength={120}
+                      autoComplete="off"
+                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-lg font-medium text-white outline-none ring-cyan-400/40 focus:ring-2"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0 !border-cyan-400/35 !text-cyan-50"
+                      disabled={
+                        loading ||
+                        titleDraft.trim().length === 0 ||
+                        titleDraft.trim() === data.match.title.trim()
+                      }
+                      onClick={() => {
+                        const next = titleDraft.trim();
+                        if (!next) {
+                          setErr(t("manage.titleEmpty"));
+                          return;
+                        }
+                        if (next === data.match.title.trim()) return;
+                        void patch({ title: next });
+                      }}
+                    >
+                      {t("manage.saveTitle")}
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-white/35">{t("manage.titleHintManage")}</p>
+                </label>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span
                     className={cn(
@@ -336,7 +389,12 @@ export function ManageClient({ slug }: { slug: string }) {
                     {meta.label}
                   </span>
                   <span className="text-xs text-white/40">
-                    投票 {data.match.vote_count} · 浏览 {data.match.view_count} · 图 {data.images.length}/10
+                    {t("manage.votesLine", {
+                      votes: data.match.vote_count,
+                      views: data.match.view_count,
+                      images: data.images.length,
+                      max: imageCap,
+                    })}
                   </span>
                 </div>
                 <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/55">{meta.hint}</p>
@@ -346,7 +404,7 @@ export function ManageClient({ slug }: { slug: string }) {
                   href={`/m/${data.match.slug}`}
                   className="inline-flex shrink-0 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-500/20"
                 >
-                  打开投票页
+                  {t("manage.openVote")}
                 </Link>
                 <Button
                   type="button"
@@ -359,11 +417,11 @@ export function ManageClient({ slug }: { slug: string }) {
                         setCopiedVoteUrl(true);
                         setTimeout(() => setCopiedVoteUrl(false), 2500);
                       },
-                      () => setErr("复制失败")
+                      () => setErr(t("manage.copyFail"))
                     );
                   }}
                 >
-                  {copiedVoteUrl ? "已复制投票链接" : "快速复制投票链接"}
+                  {copiedVoteUrl ? t("manage.copiedVoteShort") : t("manage.copyVoteQuick")}
                 </Button>
               </div>
             </div>
@@ -371,7 +429,7 @@ export function ManageClient({ slug }: { slug: string }) {
             {/* 状态操作：高亮「可点」与「当前」 */}
             {!isEnded ? (
               <div className="mt-6 border-t border-white/10 pt-5">
-                <p className="mb-3 text-xs font-medium uppercase tracking-wide text-white/40">切换状态</p>
+                <p className="mb-3 text-xs font-medium uppercase tracking-wide text-white/40">{t("manage.switchStatus")}</p>
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                   {(status === "draft" || status === "paused") && (
                     <Button
@@ -381,10 +439,10 @@ export function ManageClient({ slug }: { slug: string }) {
                         "min-w-[8.5rem] justify-center sm:min-w-[10rem]",
                         !canActivate && "opacity-40"
                       )}
-                      title={!canActivate ? "至少需要 2 张图片" : undefined}
+                      title={!canActivate ? t("manage.needTwoImages") : undefined}
                       onClick={() => void patch({ activate: true })}
                     >
-                      {status === "draft" ? "开启比赛" : "继续（激活）"}
+                      {status === "draft" ? t("manage.openMatch") : t("manage.resume")}
                     </Button>
                   )}
                   {status === "active" && (
@@ -394,7 +452,7 @@ export function ManageClient({ slug }: { slug: string }) {
                       className="min-w-[8.5rem] justify-center sm:min-w-[10rem]"
                       onClick={() => void patch({ status: "paused" })}
                     >
-                      暂停比赛
+                      {t("manage.pause")}
                     </Button>
                   )}
                   {(status === "active" || status === "paused" || status === "draft") && (
@@ -402,21 +460,21 @@ export function ManageClient({ slug }: { slug: string }) {
                       disabled={loading}
                       variant="danger"
                       className="min-w-[8.5rem] justify-center sm:min-w-[10rem]"
-                      title="将弹出两次确认，确认后从数据库永久删除本场比赛"
+                      title={t("manage.endDeleteTitle")}
                       onClick={() => void deleteMatchPermanently()}
                     >
-                      结束比赛（删除）
+                      {t("manage.endDelete")}
                     </Button>
                   )}
                 </div>
                 {!canActivate && (status === "draft" || status === "paused") ? (
-                  <p className="mt-2 text-xs text-amber-200/80">开启或继续前：请先上传至少 2 张图片。</p>
+                  <p className="mt-2 text-xs text-amber-200/80">{t("manage.needTwoBeforeOpen")}</p>
                 ) : null}
               </div>
             ) : (
               <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
-                <p className="text-sm text-white/45">已结束的比赛不能切换状态。</p>
-                <p className="text-xs text-white/35">若需从数据库中移除本场全部记录，可永久删除（同样会经过两次确认）。</p>
+                <p className="text-sm text-white/45">{t("manage.endedBlock")}</p>
+                <p className="text-xs text-white/35">{t("manage.endedDeleteNote")}</p>
                 <Button
                   type="button"
                   variant="danger"
@@ -424,7 +482,7 @@ export function ManageClient({ slug }: { slug: string }) {
                   className="min-w-[8.5rem]"
                   onClick={() => void deleteMatchPermanently()}
                 >
-                  删除本场比赛
+                  {t("manage.deleteMatch")}
                 </Button>
               </div>
             )}
@@ -434,31 +492,23 @@ export function ManageClient({ slug }: { slug: string }) {
           <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur">
             <div className="flex flex-col gap-3">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-white/40">图片列表</p>
-                <h3 className="text-base font-medium text-white">增删图片</h3>
+                <p className="text-xs font-medium uppercase tracking-wide text-white/40">{t("manage.imageList")}</p>
+                <h3 className="text-base font-medium text-white">{t("manage.imageManageTitle")}</h3>
                 <p className="mt-1 text-xs text-white/45">
-                  当前图库 {data.images.length} / {maxImagesLabel} 张。经服务端上传到 imgbb；删除会清理相关对战数据。进行中也可增删（不足 2 张时进行中会自动暂停）。
+                  {t("manage.imageManageHint", { count: data.images.length, max: maxImagesLabel })}
                 </p>
               </div>
 
               <details className="rounded-xl border border-amber-400/25 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-100/85">
-                <summary className="cursor-pointer select-none font-medium text-amber-200/95">管理员：免 10 张上限</summary>
+                <summary className="cursor-pointer select-none font-medium text-amber-200/95">{t("manage.adminSummary")}</summary>
                 <p className="mt-2 leading-relaxed text-amber-100/75">
-                  在 Vercel 设置 <code className="rounded bg-black/35 px-1">ADMIN_IMAGE_UPLOAD_BYPASS_SECRET</code>
-                  。知道该密钥的人可在管理链接后附加{" "}
-                  <code className="rounded bg-black/35 px-1">
-                    &amp;{ADMIN_UPLOAD_BYPASS_QUERY}=密钥
-                  </code>
-                  （若 URL 尚无查询串则用 <code className="rounded bg-black/35 px-1">?{ADMIN_UPLOAD_BYPASS_QUERY}=密钥</code>
-                  ），与下方输入框二选一；会同步到 sessionStorage。
-                  <span className="text-amber-200/70"> 勿分享带此参数的完整链接（会泄露密钥并进入浏览器历史）。</span>
-                  密钥错误或未配置时仍最多 {DEFAULT_MAX_IMAGES_PER_MATCH} 张。
+                  {t("manage.adminBody", { max: DEFAULT_MAX_IMAGES_PER_MATCH })}
                 </p>
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <input
                     type="password"
                     autoComplete="off"
-                    placeholder="管理员免上限密钥"
+                    placeholder={t("manage.adminPlaceholder")}
                     value={adminUploadBypassToken}
                     onChange={(e) => setAdminUploadBypassToken(e.target.value)}
                     className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35"
@@ -469,7 +519,7 @@ export function ManageClient({ slug }: { slug: string }) {
                     className="shrink-0 text-xs text-white/55"
                     onClick={() => setAdminUploadBypassToken("")}
                   >
-                    清除
+                    {t("manage.clear")}
                   </Button>
                 </div>
               </details>
@@ -483,18 +533,18 @@ export function ManageClient({ slug }: { slug: string }) {
                 label={
                   atImageCap
                     ? adminUploadBypassToken.trim()
-                      ? "已达当前模式下的图片上限"
-                      : "已达 10 张上限"
-                    : "点击选择图片上传，或从网页拖入"
+                      ? t("manage.pickAtCapBypass")
+                      : t("manage.pickAtCap10")
+                    : t("manage.pickLabel")
                 }
-                subLabel="支持多选 · 每张单独提交 · 与创建页相同规则；网页拖入由服务端拉取原图后上传图床"
+                subLabel={t("manage.pickSub")}
                 onFiles={(list) => void uploadFiles(list)}
                 onWebImageUrls={(u) => void uploadWebUrls(u)}
               />
             </div>
 
             {data.images.length === 0 ? (
-              <p className="mt-6 text-center text-sm text-white/45">暂无图片，使用上方按钮上传。</p>
+              <p className="mt-6 text-center text-sm text-white/45">{t("manage.noImages")}</p>
             ) : (
               <ul className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                 {data.images.map((img) => (
@@ -520,7 +570,7 @@ export function ManageClient({ slug }: { slug: string }) {
                         className="w-full py-1.5 text-xs"
                         onClick={() => void deleteImage(img.id)}
                       >
-                        删除
+                        {t("manage.delete")}
                       </Button>
                     </div>
                   </li>
@@ -531,7 +581,7 @@ export function ManageClient({ slug }: { slug: string }) {
 
           {/* 分享 */}
           <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-white/40">给观众分享的链接</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-white/40">{t("manage.shareAudience")}</p>
             <code className="mt-2 block break-all rounded-lg bg-black/40 p-3 text-xs text-cyan-100/90">
               {votePageUrl || `…/m/${data.match.slug}`}
             </code>
@@ -549,18 +599,18 @@ export function ManageClient({ slug }: { slug: string }) {
                       setMomentsHint(null);
                       setTimeout(() => setCopiedAudienceUrl(false), 2500);
                     },
-                    () => setErr("复制失败，请手动复制上方链接")
+                    () => setErr(t("manage.copyFail2"))
                   );
                 }}
               >
-                {copiedAudienceUrl ? "已复制" : "快速复制链接"}
+                {copiedAudienceUrl ? t("manage.copied") : t("manage.copyQuick")}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 className="!border-white/20 !text-white/80 hover:!bg-white/10"
                 disabled={!votePageUrl}
-                title="网页无法直接调起朋友圈；会复制链接并提示在微信内的操作步骤"
+                title={t("manage.momentsTitle")}
                 onClick={() => {
                   if (!votePageUrl) return;
                   void navigator.clipboard.writeText(votePageUrl).then(
@@ -569,18 +619,14 @@ export function ManageClient({ slug }: { slug: string }) {
                       setTimeout(() => setCopiedAudienceUrl(false), 2500);
                       const inWeChat =
                         typeof navigator !== "undefined" && /MicroMessenger/i.test(navigator.userAgent);
-                      setMomentsHint(
-                        inWeChat
-                          ? "链接已复制。请点右上角「···」→ 选择「分享到朋友圈」。网页无法代替你完成最后一步。"
-                          : "链接已复制。请在微信中打开该链接后，点右上角「···」→「分享到朋友圈」。（任意网页都无法从系统浏览器一键直达朋友圈。）"
-                      );
+                      setMomentsHint(inWeChat ? t("manage.momentsInWeChat") : t("manage.momentsOutWeChat"));
                       window.setTimeout(() => setMomentsHint(null), 16_000);
                     },
-                    () => setErr("复制失败，请手动复制上方链接")
+                    () => setErr(t("manage.copyFail2"))
                   );
                 }}
               >
-                微信朋友圈
+                {t("manage.wechatMoments")}
               </Button>
             </div>
             {momentsHint ? (

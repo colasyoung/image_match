@@ -2,16 +2,19 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocale } from "@/contexts/LocaleProvider";
+import { FETCH_LOAD_TIMEOUT_MS, fetchWithTimeout, isAbortError } from "@/lib/fetch-with-timeout";
+import { formatRegionHeatLabel } from "@/lib/region-display";
 import type { ActivityFeedItem } from "@/server/match-service";
 import { cn } from "@/lib/utils";
 
-function relTime(iso: string): string {
+function relTime(iso: string, t: (path: string, vars?: Record<string, string | number | undefined>) => string) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 10) return "刚刚";
-  if (s < 60) return `${s} 秒前`;
-  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`;
-  if (s < 86400) return `${Math.floor(s / 3600)} 小时前`;
-  return `${Math.floor(s / 86400)} 天前`;
+  if (s < 10) return t("feed.justNow");
+  if (s < 60) return t("feed.secondsAgo", { n: s });
+  if (s < 3600) return t("feed.minutesAgo", { n: Math.floor(s / 60) });
+  if (s < 86400) return t("feed.hoursAgo", { n: Math.floor(s / 3600) });
+  return t("feed.daysAgo", { n: Math.floor(s / 86400) });
 }
 
 type Props = {
@@ -23,20 +26,35 @@ type Props = {
 const ACTIVITY_FEED_MAX = 50;
 
 export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Props) {
+  const { t, locale } = useLocale();
   const [items, setItems] = useState(() => initialItems.slice(0, ACTIVITY_FEED_MAX));
   const [regionCounts, setRegionCounts] = useState(initialRegionCounts);
 
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/matches/${slug}/activity`);
-    if (!res.ok) return;
-    const j = (await res.json()) as { items: ActivityFeedItem[]; regionCounts: Record<string, number> };
-    if (Array.isArray(j.items)) setItems(j.items.slice(0, ACTIVITY_FEED_MAX));
-    if (j.regionCounts && typeof j.regionCounts === "object") setRegionCounts(j.regionCounts);
+    const url = `/api/matches/${slug}/activity`;
+    const run = async () => {
+      const res = await fetchWithTimeout(url, undefined, FETCH_LOAD_TIMEOUT_MS);
+      if (!res.ok) return;
+      const j = (await res.json()) as { items: ActivityFeedItem[]; regionCounts: Record<string, number> };
+      if (Array.isArray(j.items)) setItems(j.items.slice(0, ACTIVITY_FEED_MAX));
+      if (j.regionCounts && typeof j.regionCounts === "object") setRegionCounts(j.regionCounts);
+    };
+    try {
+      await run();
+    } catch (e) {
+      if (isAbortError(e)) {
+        try {
+          await run();
+        } catch {
+          /* leave previous feed */
+        }
+      }
+    }
   }, [slug]);
 
   useEffect(() => {
-    const t = setInterval(() => void refresh(), 12_000);
-    return () => clearInterval(t);
+    const id = setInterval(() => void refresh(), 12_000);
+    return () => clearInterval(id);
   }, [refresh]);
 
   const regionList = useMemo(
@@ -47,37 +65,41 @@ export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Pro
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-white/40">地区热度（按票）</p>
+        <p className="text-[10px] font-medium uppercase tracking-wide text-white/40">{t("feed.regionHeat")}</p>
         {regionList.length === 0 ? (
-          <p className="mt-1 text-xs text-white/38">暂无投票数据</p>
+          <p className="mt-1 text-xs text-white/38">{t("feed.regionEmpty")}</p>
         ) : (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {regionList.map(([region, n]) => (
-              <span
-                key={region}
-                className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
-              >
-                <span className="max-w-[120px] truncate">{region}</span>
-                <span className="font-mono text-white/45">{n}</span>
-              </span>
-            ))}
+            {regionList.map(([region, n]) => {
+              const label = formatRegionHeatLabel(region, locale);
+              return (
+                <span
+                  key={region}
+                  title={label}
+                  className="inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
+                >
+                  <span className="min-w-0 max-w-[min(14rem,72vw)] truncate">{label}</span>
+                  <span className="shrink-0 font-mono text-white/45">{n}</span>
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
 
       <div>
-        <h3 className="text-sm font-medium text-white/85">最近大家在选什么</h3>
-        <p className="mt-0.5 text-[11px] text-white/42">每条是一条真实投票：谁、选了哪边、大约从哪来。</p>
+        <h3 className="text-sm font-medium text-white/85">{t("feed.recentTitle")}</h3>
+        <p className="mt-0.5 text-[11px] text-white/42">{t("feed.recentSub")}</p>
       </div>
 
       {items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-white/15 py-8 text-center text-xs text-white/40">
-          还没有记录，来投第一票吧。
+          {t("feed.emptyFeed")}
         </div>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {items.map((row) => (
-            <VoteStrip key={row.id} row={row} />
+            <VoteStrip key={row.id} row={row} t={t} locale={locale} />
           ))}
         </ul>
       )}
@@ -85,20 +107,26 @@ export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Pro
   );
 }
 
-function VoteStrip({ row }: { row: ActivityFeedItem }) {
-  const region = row.voter_region ?? "未知地区";
-  const t = relTime(row.created_at);
+function VoteStrip({
+  row,
+  t,
+  locale,
+}: {
+  row: ActivityFeedItem;
+  t: (path: string, vars?: Record<string, string | number | undefined>) => string;
+  locale: "zh" | "en";
+}) {
+  const region = formatRegionHeatLabel(row.voter_region ?? "未知", locale);
+  const timeLabel = relTime(row.created_at, t);
 
   if (row.skipped) {
     return (
       <li className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-1.5 pl-2.5 text-[11px] text-white/55">
         <Mini src={row.left_thumb} />
-        <span className="text-white/30">vs</span>
+        <span className="text-white/30">{t("common.vs")}</span>
         <Mini src={row.right_thumb} />
-        <span className="min-w-0 flex-1 truncate">
-          <span className="text-white/65">来自 {region}</span> 的用户跳过了这一对
-        </span>
-        <time className="shrink-0 tabular-nums text-white/35">{t}</time>
+        <span className="min-w-0 flex-1 truncate">{t("feed.voteSkipped", { region })}</span>
+        <time className="shrink-0 tabular-nums text-white/35">{timeLabel}</time>
       </li>
     );
   }
@@ -109,11 +137,10 @@ function VoteStrip({ row }: { row: ActivityFeedItem }) {
   return (
     <li className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-1.5 pl-2.5">
       <Mini src={row.left_thumb} ring={pickedLeft} />
-      <span className="shrink-0 text-[10px] text-white/28">vs</span>
+      <span className="shrink-0 text-[10px] text-white/28">{t("common.vs")}</span>
       <Mini src={row.right_thumb} ring={!pickedLeft} />
       <div className="min-w-0 flex-1 text-[11px] leading-snug">
-        <span className="text-white/60">来自 {region}</span>
-        <span className="text-white/45"> 的用户选了</span>
+        <span className="text-white/60">{t("feed.votePicked", { region })}</span>
         <span className="ml-1 inline-flex translate-y-0.5 align-middle">
           {winnerSrc ? (
             <span className="relative inline-block h-7 w-7 overflow-hidden rounded-md border border-emerald-500/40 shadow-sm shadow-emerald-900/30">
@@ -129,9 +156,9 @@ function VoteStrip({ row }: { row: ActivityFeedItem }) {
             </span>
           ) : null}
         </span>
-        <span className="text-emerald-200/85"> 这一边</span>
+        <span className="text-emerald-200/85">{t("feed.thisSide")}</span>
       </div>
-      <time className="shrink-0 tabular-nums text-[10px] text-white/35">{t}</time>
+      <time className="shrink-0 tabular-nums text-[10px] text-white/35">{timeLabel}</time>
     </li>
   );
 }

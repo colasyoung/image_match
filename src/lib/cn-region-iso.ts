@@ -40,6 +40,62 @@ const CN_SUBDIVISION_ZH: Record<string, string> = {
   TW: "台湾省",
 };
 
+/** 与 `CN_SUBDIVISION_ZH` 同键，英文界面展示用（`Intl.DisplayNames` 不支持 CN-XX 子码）。 */
+const CN_SUBDIVISION_EN: Record<string, string> = {
+  AH: "Anhui",
+  BJ: "Beijing",
+  CQ: "Chongqing",
+  FJ: "Fujian",
+  GD: "Guangdong",
+  GS: "Gansu",
+  GX: "Guangxi",
+  GZ: "Guizhou",
+  HA: "Henan",
+  HB: "Hubei",
+  HE: "Hebei",
+  HI: "Hainan",
+  HL: "Heilongjiang",
+  HN: "Hunan",
+  JL: "Jilin",
+  JS: "Jiangsu",
+  JX: "Jiangxi",
+  LN: "Liaoning",
+  NM: "Inner Mongolia",
+  NX: "Ningxia",
+  QH: "Qinghai",
+  SC: "Sichuan",
+  SD: "Shandong",
+  SN: "Shaanxi",
+  SX: "Shanxi",
+  SH: "Shanghai",
+  TJ: "Tianjin",
+  XJ: "Xinjiang",
+  XZ: "Tibet",
+  YN: "Yunnan",
+  ZJ: "Zhejiang",
+  HK: "Hong Kong",
+  MO: "Macau",
+  TW: "Taiwan",
+};
+
+const CN_ZH_NAME_TO_CODE: Record<string, string> = Object.fromEntries(
+  Object.entries(CN_SUBDIVISION_ZH).map(([code, zh]) => [zh, code])
+);
+
+/** 中文省级称谓（与存储的 `voter_region` 首段一致）→ ISO 3166-2 子码（如 GD、BJ） */
+export function cnZhProvinceNameToSubdivisionCode(name: string): string | null {
+  const k = name.trim();
+  if (!k) return null;
+  return CN_ZH_NAME_TO_CODE[k] ?? null;
+}
+
+/** 中文省级称谓 → 英文常用名（用于英文 UI 热力条等）。 */
+export function cnZhProvinceNameToEnLabel(name: string): string | null {
+  const code = cnZhProvinceNameToSubdivisionCode(name);
+  if (!code) return null;
+  return CN_SUBDIVISION_EN[code] ?? null;
+}
+
 /** 直辖市：有省名展示时一般不再重复缀英文城市名 */
 export const CN_MUNICIPALITY_ZH = new Set(["北京市", "天津市", "上海市", "重庆市"]);
 

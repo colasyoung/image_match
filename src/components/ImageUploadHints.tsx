@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, type DragEvent } from "react";
+import { useLocale } from "@/contexts/LocaleProvider";
 import { cn } from "@/lib/utils";
 import { IMGBB_DEFAULT_EXPIRATION_SECONDS, IMGBB_UPLOAD_MAX_BYTES } from "@/lib/imgbb";
 import {
@@ -14,21 +15,12 @@ const MB = IMGBB_UPLOAD_MAX_BYTES / (1024 * 1024);
 const DEFAULT_DAYS = Math.round(IMGBB_DEFAULT_EXPIRATION_SECONDS / 86_400);
 
 function FullHintList() {
+  const { t } = useLocale();
   return (
     <ul className="mt-1.5 list-inside list-disc space-y-1 text-cyan-100/80">
-      <li>
-        单张最大 <strong className="text-white">{MB}MB</strong>，超出将上传失败。可从<strong className="text-white">本机</strong>或
-        <strong className="text-white">其它网页</strong>把图片拖进上传区：外链由服务端拉取后再传 imgbb（内网、本地地址会被拒绝）。
-      </li>
-      <li>
-        服务端使用 imgbb 参数 <code className="rounded bg-black/30 px-1">expiration</code>（默认{" "}
-        <strong className="text-white">{DEFAULT_DAYS}</strong> 天），到期后由图床<strong>自动删除</strong>
-        文件，链接会失效；重要素材请自行备份。
-      </li>
-      <li>
-        可通过环境变量 <code className="rounded bg-black/30 px-1">IMGBB_EXPIRATION_SECONDS</code> 调整（秒，官方允许
-        60–15552000）。机器可读说明见 <code className="rounded bg-black/30 px-1">GET /api/upload-image</code>。
-      </li>
+      <li>{t("hints.li1", { mb: MB })}</li>
+      <li>{t("hints.li2", { days: DEFAULT_DAYS })}</li>
+      <li>{t("hints.li3")}</li>
     </ul>
   );
 }
@@ -42,6 +34,7 @@ export function ImageUploadHints({
   className?: string;
   compact?: boolean;
 }) {
+  const { t } = useLocale();
   return (
     <div
       className={cn(
@@ -49,17 +42,14 @@ export function ImageUploadHints({
         className
       )}
     >
-      <p className="font-medium text-cyan-200/95">上传说明（图床 imgbb）</p>
+      <p className="font-medium text-cyan-200/95">{t("hints.title")}</p>
       {compact ? (
         <>
-          <p className="mt-1.5 text-cyan-100/85">
-            每张最大 <strong className="text-white">{MB}MB</strong>；托管约 <strong className="text-white">{DEFAULT_DAYS}</strong>{" "}
-            天后会自动删除，重要照片请自己留备份。可从网页拖入图片，外链由服务端拉取后上传。
-          </p>
+          <p className="mt-1.5 text-cyan-100/85">{t("hints.compactLine", { mb: MB, days: DEFAULT_DAYS })}</p>
           <details className="mt-2 group">
             <summary className="cursor-pointer list-none text-cyan-200/90 marker:content-none [&::-webkit-details-marker]:hidden">
               <span className="underline decoration-cyan-400/40 underline-offset-2 group-open:decoration-cyan-300/60">
-                展开技术说明
+                {t("hints.expand")}
               </span>
             </summary>
             <FullHintList />
@@ -102,6 +92,7 @@ export function ImagePickButton({
   className,
   enableDragDrop = true,
 }: PickProps) {
+  const { t } = useLocale();
   const [dragActive, setDragActive] = useState(false);
   const dragDepth = useRef(0);
 
@@ -171,10 +162,12 @@ export function ImagePickButton({
             dragActive && enableDragDrop && !disabled && !busy && "border-cyan-200/70 from-cyan-500/35 to-teal-900/35"
           )}
         >
-          <span className="text-base font-semibold tracking-wide text-white">{busy ? "处理中…" : label}</span>
+          <span className="text-base font-semibold tracking-wide text-white">
+            {busy ? t("hints.pickBusy") : label}
+          </span>
           {subLabel ? <span className="mt-1 text-xs text-white/55">{subLabel}</span> : null}
           {enableDragDrop && !disabled && !busy ? (
-            <span className="mt-2 text-[11px] text-cyan-200/75">支持从本机或网页把图片拖到这里</span>
+            <span className="mt-2 text-[11px] text-cyan-200/75">{t("hints.dragHint")}</span>
           ) : null}
           <input
             id={id}
