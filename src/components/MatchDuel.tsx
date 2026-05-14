@@ -11,6 +11,7 @@ import {
   isAbortError,
 } from "@/lib/fetch-with-timeout";
 import type { ImageRow } from "@/server/match-service";
+import { MatchDuelCurrentPairPreload } from "@/components/MatchDuelCurrentPairPreload";
 import { MatchDuelImagePreload } from "@/components/MatchDuelImagePreload";
 import { ProgressiveRemoteImage } from "@/components/ProgressiveRemoteImage";
 import { Button } from "@/components/ui/button";
@@ -27,9 +28,8 @@ export function MatchDuel({ slug, disabled }: Props) {
   /** 用户刚投的那一侧；与 voteInFlight 同时为真时用于胜者/败者差异化 UI */
   const [pickedSide, setPickedSide] = useState<"left" | "right" | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [leftImgReady, setLeftImgReady] = useState(false);
-  const [rightImgReady, setRightImgReady] = useState(false);
-  const [imgLoadFailed, setImgLoadFailed] = useState(false);
+  /** 正在请求 next-pair：禁止操作，但不清空上一对的「已解码」避免闪白 loading */
+  const [pairRequestPending, setPairRequestPending] = useState(false);
   /** 本场全部图片，用于后台预加载尚未出场的对局图 */
   const [preloadPool, setPreloadPool] = useState<ImageRow[]>([]);
   const loadGenRef = useRef(0);
@@ -38,55 +38,50 @@ export function MatchDuel({ slug, disabled }: Props) {
   const load = useCallback(async () => {
     await Promise.resolve();
     const gen = ++loadGenRef.current;
+    setPairRequestPending(true);
     setErr(null);
-    setImgLoadFailed(false);
-    setLeftImgReady(false);
-    setRightImgReady(false);
-    let res: Response;
     try {
-      res = await fetchWithTimeout(`/api/matches/${slug}/next-pair`, undefined, FETCH_LOAD_TIMEOUT_MS);
-    } catch (e) {
-      if (isAbortError(e)) {
-        void loadRef.current?.();
+      let res: Response;
+      try {
+        res = await fetchWithTimeout(`/api/matches/${slug}/next-pair`, undefined, FETCH_LOAD_TIMEOUT_MS);
+      } catch (e) {
+        if (isAbortError(e)) {
+          void loadRef.current?.();
+          return;
+        }
+        if (gen !== loadGenRef.current) return;
+        setErr(t("duel.loadFail"));
+        setPickedSide(null);
+        setPreloadPool([]);
+        setLeft(null);
+        setRight(null);
         return;
       }
       if (gen !== loadGenRef.current) return;
-      setErr(t("duel.loadFail"));
-      setPickedSide(null);
-      setPreloadPool([]);
-      setLeft(null);
-      setRight(null);
-      return;
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setErr(j.error ? friendlyApiError(String(j.error), t) : t("duel.loadFail"));
+        setPickedSide(null);
+        setPreloadPool([]);
+        setLeft(null);
+        setRight(null);
+        return;
+      }
+      const j = (await res.json()) as { left: ImageRow; right: ImageRow; pool?: ImageRow[] };
+      if (gen !== loadGenRef.current) return;
+      setLeft(j.left);
+      setRight(j.right);
+      setPreloadPool(Array.isArray(j.pool) && j.pool.length >= 2 ? j.pool : [j.left, j.right]);
+    } finally {
+      if (gen === loadGenRef.current) {
+        setPairRequestPending(false);
+      }
     }
-    if (gen !== loadGenRef.current) return;
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      setErr(j.error ? friendlyApiError(String(j.error), t) : t("duel.loadFail"));
-      setPickedSide(null);
-      setPreloadPool([]);
-      setLeft(null);
-      setRight(null);
-      return;
-    }
-    const j = (await res.json()) as { left: ImageRow; right: ImageRow; pool?: ImageRow[] };
-    if (gen !== loadGenRef.current) return;
-    setLeft(j.left);
-    setRight(j.right);
-    setPreloadPool(Array.isArray(j.pool) && j.pool.length >= 2 ? j.pool : [j.left, j.right]);
   }, [slug, t]);
 
   useEffect(() => {
     loadRef.current = load;
   }, [load]);
-
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      setLeftImgReady(false);
-      setRightImgReady(false);
-      setImgLoadFailed(false);
-    }, 0);
-    return () => window.clearTimeout(id);
-  }, [left?.id, right?.id]);
 
   useEffect(() => {
     if (!disabled) {
@@ -96,24 +91,97 @@ export function MatchDuel({ slug, disabled }: Props) {
     }
   }, [disabled, load]);
 
-  /** 配对已返回但大图长时间未完成解码/拉取时，重新拉一对（须明显长于 API 超时，避免误打断） */
-  useEffect(() => {
-    if (disabled) return;
-    if (!left || !right) return;
-    if (leftImgReady && rightImgReady) return;
-    const id = window.setTimeout(() => {
-      void load();
-    }, IMAGE_DECODE_STALL_RETRY_MS);
-    return () => window.clearTimeout(id);
-  }, [disabled, left, right, leftImgReady, rightImgReady, load]);
-
   const preloadKey = useMemo(() => {
     if (disabled || preloadPool.length < 2) return "";
     return [...preloadPool].map((i) => i.id).sort().join("|");
   }, [disabled, preloadPool]);
 
+  if (disabled) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/60 backdrop-blur">
+        {t("duel.inactive")}
+      </div>
+    );
+  }
+
+  if (err && !left) {
+    return (
+      <div className="space-y-4 text-center">
+        <p className="text-red-300/90">{err}</p>
+        <Button onClick={() => void load()}>{t("duel.retry")}</Button>
+      </div>
+    );
+  }
+
+  if (!left || !right) {
+    return <div className="animate-pulse text-center text-white/50">{t("duel.loadingPair")}</div>;
+  }
+
+  return (
+    <div className="relative space-y-4">
+      <MatchDuelCurrentPairPreload key={`cur-${left.id}-${right.id}`} left={left} right={right} />
+      {preloadKey ? <MatchDuelImagePreload key={preloadKey} pool={preloadPool} /> : null}
+      <MatchDuelPairSurface
+        key={`${left.id}-${right.id}`}
+        slug={slug}
+        left={left}
+        right={right}
+        voteInFlight={voteInFlight}
+        setVoteInFlight={setVoteInFlight}
+        pickedSide={pickedSide}
+        setPickedSide={setPickedSide}
+        pairRequestPending={pairRequestPending}
+        load={load}
+        err={err}
+        setErr={setErr}
+      />
+    </div>
+  );
+}
+
+type MatchDuelPairSurfaceProps = {
+  slug: string;
+  left: ImageRow;
+  right: ImageRow;
+  voteInFlight: boolean;
+  setVoteInFlight: (v: boolean) => void;
+  pickedSide: "left" | "right" | null;
+  setPickedSide: (v: "left" | "right" | null) => void;
+  pairRequestPending: boolean;
+  load: () => Promise<void>;
+  err: string | null;
+  setErr: (v: string | null) => void;
+};
+
+function MatchDuelPairSurface({
+  slug,
+  left,
+  right,
+  voteInFlight,
+  setVoteInFlight,
+  pickedSide,
+  setPickedSide,
+  pairRequestPending,
+  load,
+  err,
+  setErr,
+}: MatchDuelPairSurfaceProps) {
+  const { t } = useLocale();
+  const [leftImgReady, setLeftImgReady] = useState(false);
+  const [rightImgReady, setRightImgReady] = useState(false);
+  const [imgLoadFailed, setImgLoadFailed] = useState(false);
+
+  /** 配对已返回但大图长时间未完成解码/拉取时，重新拉一对（须明显长于 API 超时，避免误打断） */
+  useEffect(() => {
+    if (leftImgReady && rightImgReady) return;
+    const id = window.setTimeout(() => {
+      void load();
+    }, IMAGE_DECODE_STALL_RETRY_MS);
+    return () => window.clearTimeout(id);
+  }, [left, right, leftImgReady, rightImgReady, load]);
+
   const vote = async (winner: ImageRow, loser: ImageRow) => {
-    if (!left || !right || voteInFlight || !leftImgReady || !rightImgReady || imgLoadFailed) return;
+    if (voteInFlight || !leftImgReady || !rightImgReady || imgLoadFailed) return;
     const side: "left" | "right" = winner.id === left.id ? "left" : "right";
     setPickedSide(side);
     setVoteInFlight(true);
@@ -159,7 +227,7 @@ export function MatchDuel({ slug, disabled }: Props) {
   };
 
   const skip = async () => {
-    if (!left || !right || voteInFlight || !leftImgReady || !rightImgReady || imgLoadFailed) return;
+    if (voteInFlight || !leftImgReady || !rightImgReady || imgLoadFailed) return;
     setPickedSide(null);
     setVoteInFlight(true);
     setErr(null);
@@ -180,30 +248,9 @@ export function MatchDuel({ slug, disabled }: Props) {
     setVoteInFlight(false);
   };
 
-  if (disabled) {
-    return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/60 backdrop-blur">
-        {t("duel.inactive")}
-      </div>
-    );
-  }
-
-  if (err && !left) {
-    return (
-      <div className="space-y-4 text-center">
-        <p className="text-red-300/90">{err}</p>
-        <Button onClick={() => void load()}>{t("duel.retry")}</Button>
-      </div>
-    );
-  }
-
-  if (!left || !right) {
-    return <div className="animate-pulse text-center text-white/50">{t("duel.loadingPair")}</div>;
-  }
-
   const imagesInteractive = leftImgReady && rightImgReady && !imgLoadFailed;
   const revealPair = imagesInteractive;
-  const gateBusy = voteInFlight || !imagesInteractive;
+  const gateBusy = voteInFlight || pairRequestPending || !imagesInteractive;
   const pickFeedback = Boolean(voteInFlight && pickedSide);
   const leftResult: "none" | "winner" | "loser" = pickFeedback
     ? pickedSide === "left"
@@ -217,8 +264,7 @@ export function MatchDuel({ slug, disabled }: Props) {
     : "none";
 
   return (
-    <div className="relative space-y-4">
-      {preloadKey ? <MatchDuelImagePreload key={preloadKey} pool={preloadPool} /> : null}
+    <>
       <p className="text-center text-xs leading-relaxed text-white/50 md:text-sm">
         {imgLoadFailed ? (
           <>
@@ -256,7 +302,6 @@ export function MatchDuel({ slug, disabled }: Props) {
           interactionLocked={gateBusy}
           resultRole={leftResult}
           revealPair={revealPair}
-          loadOrder={0}
           onPick={() => void vote(left, right)}
           onImageReady={() => setLeftImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -268,7 +313,6 @@ export function MatchDuel({ slug, disabled }: Props) {
           interactionLocked={gateBusy}
           resultRole={rightResult}
           revealPair={revealPair}
-          loadOrder={1}
           onPick={() => void vote(right, left)}
           onImageReady={() => setRightImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -284,7 +328,7 @@ export function MatchDuel({ slug, disabled }: Props) {
           {t("duel.skip")}
         </Button>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -295,7 +339,6 @@ function DuelCard({
   interactionLocked,
   resultRole,
   revealPair,
-  loadOrder,
   onImageReady,
   onImageError,
 }: {
@@ -305,12 +348,10 @@ function DuelCard({
   interactionLocked: boolean;
   resultRole: "none" | "winner" | "loser";
   revealPair: boolean;
-  loadOrder: 0 | 1;
   onImageReady: () => void;
   onImageError: () => void;
 }) {
   const { t } = useLocale();
-  const primary = loadOrder === 0;
   const thumbRaw = (image.thumb_url ?? "").trim();
   const fullRaw = (image.image_url ?? "").trim();
   const thumbLayerRaw = thumbRaw || fullRaw;
@@ -374,8 +415,9 @@ function DuelCard({
           fullUrlRaw={fullLayerRaw}
           resetKey={image.id}
           sizes={sizes}
-          priority={primary}
-          fetchPriority={primary ? "high" : "low"}
+          priority
+          fetchPriority="high"
+          duelTiming
           visible={revealPair}
           imageClassName={cn(
             revealPair && !interactionLocked && "group-hover:scale-[1.02]",
