@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 
 const STORAGE_KEY = "image_match_admin_upload_bypass";
 
 export function useAdminUploadBypass() {
   const [adminUploadBypassToken, setAdminUploadBypassTokenState] = useState("");
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     try {
       const v = sessionStorage.getItem(STORAGE_KEY);
-      if (v) setAdminUploadBypassTokenState(v);
+      if (v) queueMicrotask(() => setAdminUploadBypassTokenState(v));
     } catch {
       /* private mode */
     }

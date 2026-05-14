@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /** nsfwjs / TensorFlow Node 含原生绑定，勿打进 serverless bundle */
+  serverExternalPackages: ["@tensorflow/tfjs-node", "@tensorflow/tfjs", "nsfwjs"],
   images: {
     /** imgbb 及常见子域；由 Next 边缘按需缩放 WebP/AVIF，减轻大图直链耗时 */
     remotePatterns: [

@@ -23,10 +23,11 @@ function headerOne(headers: Headers, names: readonly string[]): string | null {
 }
 
 /**
- * 从边缘请求头解析「地区」展示串。
+ * 从边缘请求头解析「地区」展示串（写入数据库后仅作粗略统计与展示）。
  * - 中国（当前主部署在 Vercel）：用 `x-vercel-ip-country-region`（ISO 3166-2 子码）映射到省/自治区/直辖市，城市用 `x-vercel-ip-city`。
  * - 非中国：保持「国家｜城市」。
  * - 若将来请求经过 Cloudflare 且带有 `cf-region-code` / `cf-region` / `cf-ipcity`，也会参与解析（与 Vercel 头二选一由 `headerOne` 顺序决定）。
+ * 标签依赖 CDN 提供的 IP 地理信息，可能不准；不代表法律身份或官方行政区划认定。
  */
 export function regionFromHeaders(headers: Headers): string {
   const countryRaw = headerOne(headers, ["x-vercel-ip-country", "cf-ipcountry"]);

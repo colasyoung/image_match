@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useLocale } from "@/contexts/LocaleProvider";
@@ -94,6 +94,7 @@ export function ManageClient({ slug }: { slug: string }) {
     return `${window.location.origin}/m/${slug}`;
   }, [slug]);
 
+  const loadRef = useRef<(() => Promise<void>) | null>(null);
   const load = useCallback(async () => {
     await Promise.resolve();
     if (!token) {
@@ -110,30 +111,35 @@ export function ManageClient({ slug }: { slug: string }) {
       );
     } catch (e) {
       if (isAbortError(e)) {
-        void load();
+        void loadRef.current?.();
         return;
       }
       setErr(t("manage.loadFail"));
       setData(null);
+      setTitleDraft("");
       return;
     }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       setErr(j.error ? friendlyApiError(String(j.error), t) : t("manage.loadFail"));
       setData(null);
+      setTitleDraft("");
       return;
     }
-    setData(await res.json());
+    const payload = (await res.json()) as MatchApi;
+    setData(payload);
+    setTitleDraft(payload.match.title);
   }, [slug, token, t]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch schedules state updates after network I/O
-    void load();
+    loadRef.current = load;
   }, [load]);
 
   useEffect(() => {
-    if (data) setTitleDraft(data.match.title);
-  }, [data]);
+    queueMicrotask(() => {
+      void load();
+    });
+  }, [load]);
 
   const patch = async (body: Record<string, unknown>) => {
     if (!token) return;
@@ -498,31 +504,6 @@ export function ManageClient({ slug }: { slug: string }) {
                   {t("manage.imageManageHint", { count: data.images.length, max: maxImagesLabel })}
                 </p>
               </div>
-
-              <details className="rounded-xl border border-amber-400/25 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-100/85">
-                <summary className="cursor-pointer select-none font-medium text-amber-200/95">{t("manage.adminSummary")}</summary>
-                <p className="mt-2 leading-relaxed text-amber-100/75">
-                  {t("manage.adminBody", { max: DEFAULT_MAX_IMAGES_PER_MATCH })}
-                </p>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    placeholder={t("manage.adminPlaceholder")}
-                    value={adminUploadBypassToken}
-                    onChange={(e) => setAdminUploadBypassToken(e.target.value)}
-                    className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="shrink-0 text-xs text-white/55"
-                    onClick={() => setAdminUploadBypassToken("")}
-                  >
-                    {t("manage.clear")}
-                  </Button>
-                </div>
-              </details>
 
               <ImageUploadHints />
 

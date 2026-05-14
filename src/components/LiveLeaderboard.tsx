@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { useLocale } from "@/contexts/LocaleProvider";
@@ -10,6 +10,13 @@ import type { ImageRow } from "@/server/match-service";
 import { cn } from "@/lib/utils";
 
 type Row = { rank: number; image: ImageRow; winRate: number };
+
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]):not([aria-hidden="true"]), a[href]:not([aria-hidden="true"]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([aria-hidden="true"])';
+
+function focusableIn(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+}
 
 function fullImageSrc(img: ImageRow): string {
   return (img.image_url || img.thumb_url || "").trim();
@@ -35,6 +42,14 @@ export function LiveLeaderboard({
   const [previewLoadError, setPreviewLoadError] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
   const rankingsRefreshDepthRef = useRef(0);
+  const previewReturnFocusRef = useRef<HTMLElement | null>(null);
+  const previewCloseRef = useRef<HTMLButtonElement>(null);
+
+  const closePreview = useCallback(() => {
+    setPreviewFullLoaded(false);
+    setPreviewLoadError(false);
+    setPreview(null);
+  }, []);
 
   const pullRankings = useCallback(async () => {
     rankingsRefreshDepthRef.current += 1;
@@ -75,7 +90,9 @@ export function LiveLeaderboard({
   const previewSrc = useMemo(() => (preview ? fullImageSrc(preview.image) : ""), [preview]);
 
   useLayoutEffect(() => {
-    setPortalReady(true);
+    queueMicrotask(() => {
+      setPortalReady(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -106,19 +123,9 @@ export function LiveLeaderboard({
   }, [matchId, slug, pullRankings]);
 
   useEffect(() => {
-    if (!preview) {
-      setPreviewFullLoaded(false);
-      setPreviewLoadError(false);
-      return;
-    }
-    setPreviewFullLoaded(false);
-    setPreviewLoadError(false);
-  }, [preview, previewSrc]);
-
-  useEffect(() => {
     if (!preview) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPreview(null);
+      if (e.key === "Escape") closePreview();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -127,14 +134,56 @@ export function LiveLeaderboard({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
+  }, [preview, closePreview]);
+
+  useLayoutEffect(() => {
+    if (!preview) return;
+    previewCloseRef.current?.focus({ preventScroll: true });
   }, [preview]);
+
+  useEffect(() => {
+    if (!preview) return;
+    return () => {
+      const el = previewReturnFocusRef.current;
+      previewReturnFocusRef.current = null;
+      el?.focus({ preventScroll: true });
+    };
+  }, [preview]);
+
+  const trapPreviewTab = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Tab" || !preview) return;
+      const root = e.currentTarget;
+      const nodes = focusableIn(root);
+      if (nodes.length === 0) return;
+      if (nodes.length === 1) {
+        e.preventDefault();
+        nodes[0].focus();
+        return;
+      }
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !root.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !root.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    },
+    [preview]
+  );
 
   const previewOverlay =
     preview && previewSrc ? (
       <div
         className="fixed inset-0 z-[200] flex flex-col bg-black/88 backdrop-blur-md"
         role="presentation"
-        onClick={() => setPreview(null)}
+        onKeyDownCapture={trapPreviewTab}
+        onClick={closePreview}
       >
         <div
           className="flex shrink-0 items-start justify-between gap-3 px-3 pt-3"
@@ -144,9 +193,10 @@ export function LiveLeaderboard({
             {t("leaderboard.previewRank", { rank: preview.rank })}
           </p>
           <button
+            ref={previewCloseRef}
             type="button"
             className="shrink-0 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 outline-none transition hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-cyan-400/70"
-            onClick={() => setPreview(null)}
+            onClick={closePreview}
           >
             {t("leaderboard.close")}
           </button>
@@ -228,8 +278,14 @@ export function LiveLeaderboard({
         <ul className="divide-y divide-white/5">
         {sorted.map((r) => {
           const pct = r.image.battle_count > 0 ? Math.round(r.winRate * 100) : 0;
+          const rowStatsLabel = t("leaderboard.rowStats", {
+            pct,
+            battles: r.image.battle_count,
+            wins: r.image.win_count,
+            losses: r.image.loss_count,
+          });
           return (
-            <li key={r.image.id} className="flex items-center gap-2.5 px-3 py-2.5 text-sm">
+            <li key={r.image.id} className="flex min-w-0 items-center gap-2.5 px-3 py-2.5 text-sm">
               <span className="w-6 shrink-0 text-right text-base font-semibold tabular-nums text-cyan-300/90">
                 {r.rank}
               </span>
@@ -237,9 +293,13 @@ export function LiveLeaderboard({
                 type="button"
                 className="group relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-white/10 shadow-sm outline-none ring-offset-2 ring-offset-zinc-950 transition hover:border-white/25 focus-visible:ring-2 focus-visible:ring-cyan-400/55"
                 aria-label={t("leaderboard.viewLarge", { rank: r.rank })}
-                onClick={() => {
+                onClick={(e) => {
                   const src = fullImageSrc(r.image);
-                  if (src) setPreview({ rank: r.rank, image: r.image });
+                  if (!src) return;
+                  previewReturnFocusRef.current = e.currentTarget;
+                  setPreviewFullLoaded(false);
+                  setPreviewLoadError(false);
+                  setPreview({ rank: r.rank, image: r.image });
                 }}
               >
                 <Image
@@ -251,22 +311,13 @@ export function LiveLeaderboard({
                   quality={75}
                 />
               </button>
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] text-white/72">
-                  {t("leaderboard.winRate")} <span className="font-medium text-white/90">{pct}%</span>
-                  <span className="mx-1 text-white/25">·</span>
-                  <span className="text-white/55">
-                    {r.image.battle_count} {t("leaderboard.battles")}
-                  </span>
-                  <span className="mx-1 text-white/25">·</span>
-                  <span className="text-white/55">
-                    {r.image.win_count} {t("leaderboard.wins")}
-                  </span>
-                  <span className="text-white/35"> / </span>
-                  <span className="text-white/55">
-                    {r.image.loss_count} {t("leaderboard.losses")}
-                  </span>
-                </div>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <p
+                  className="truncate text-[11px] tabular-nums text-white/72"
+                  title={rowStatsLabel}
+                >
+                  {rowStatsLabel}
+                </p>
               </div>
             </li>
           );

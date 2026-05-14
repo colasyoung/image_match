@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { useLocale } from "@/contexts/LocaleProvider";
 import { friendlyApiError } from "@/lib/i18n/api-errors";
+import { matchStatusDisplay } from "@/lib/match-status-label";
 import { Button } from "@/components/ui/button";
 
 export type AdminMatchRow = {
@@ -97,7 +98,7 @@ export function AdminMatchesTable({ rows, origin }: { rows: AdminMatchRow[]; ori
                 <tr key={m.slug} className="text-white/85">
                   <td className="max-w-[180px] truncate px-3 py-2.5 font-medium">{m.title}</td>
                   <td className="px-3 py-2.5 font-mono text-xs text-white/60">{m.slug}</td>
-                  <td className="px-3 py-2.5 text-xs">{m.status}</td>
+                  <td className="px-3 py-2.5 text-xs">{matchStatusDisplay(t, m.status)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-white/70">{m.image_count}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{m.vote_count}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-white/70">{m.view_count}</td>

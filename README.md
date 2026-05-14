@@ -56,13 +56,11 @@ npm run dev
 默认每场比赛最多 **10** 张图。若要在单场里继续传更多张，需要同时满足：
 
 1. **服务端**已在环境变量里配置 **`ADMIN_IMAGE_UPLOAD_BYPASS_SECRET`**（本地写在 `.env.local`，线上写在 Vercel 等托管的 Environment Variables 里，**改完需重新部署**）。未配置则永远无法突破 10 张。
-2. **浏览器侧**把**与上述环境变量完全相同**的字符串交给上传接口，任选其一即可：
-   - 打开 **创建页**或**管理页**，在「管理员：免 10 张上限」里粘贴；或  
-   - 在 URL 里加查询参数 **`uploadBypass=`** 同一串密钥，例如  
+2. **浏览器侧**把**与上述环境变量完全相同**的字符串交给上传接口。产品界面**不**提供该入口；仅建议在受控环境通过 **URL 查询参数**附带（打开一次后写入本机 `sessionStorage`，之后同域上传会自动带上），例如：  
      `https://你的域名/manage/<slug>?token=<manage_token>&uploadBypass=<密钥>`  
      `https://你的域名/create?uploadBypass=<密钥>`  
 
-上传时 POST 表单会带字段 **`adminUploadBypassToken`**；仅当它与 **`ADMIN_IMAGE_UPLOAD_BYPASS_SECRET`** 一致时，服务端才取消 10 张限制。参数名 `uploadBypass` 与代码常量的对应关系见 `src/lib/admin-upload-bypass.ts`。**勿**把带 `uploadBypass=` 的链接发给他人（会泄露密钥）。
+上传时 POST 表单会带字段 **`adminUploadBypassToken`**；仅当它与 **`ADMIN_IMAGE_UPLOAD_BYPASS_SECRET`** 一致时，服务端才取消 10 张限制。参数名 `uploadBypass` 与代码常量的对应关系见 `src/lib/admin-upload-bypass.ts`。**勿**把带 `uploadBypass=` 的链接发到公网或聊天记录（会泄露密钥）。
 
 ---
 
@@ -71,6 +69,18 @@ npm run dev
 本应用含 **API Routes**，需要支持 **Node.js** 的 Next.js 运行时（常见 PaaS 均可）。在托管控制台配置与 `.env.example` **同名同含义**的环境变量即可。
 
 仓库内附带 **OpenNext + Cloudflare** 相关文件；若你在该路线或类似边缘平台上构建，请按对应官方文档设置构建命令与变量。构建或运行报错时，以该平台日志与 `npm run build` 本地输出为准。
+
+## 地区标签、隐私与内容责任（部署方必读）
+
+本应用**不**声称在任意法域均已满足全部监管要求；面向公众上线前请自行完成合规审查（必要时咨询法律顾问）。
+
+- **地区字符串**：来自托管平台（如 Vercel / Cloudflare）根据 IP 推断的请求头，**仅为粗略、聚合的 UI 统计**，可能错误或不更新；**不代表**用户的国籍、户籍或官方行政区划认定。展示层对若干敏感标签采用常见技术性写法（例如 ISO 3166-2:CN 子码对应中文行政区名、IOC 对 `TW` 的中英文用名、`HK`/`MO` 的常见中英文表述），以降低 UI 层面的歧义；**不构成**任何政治或领土主张。
+- **IP 与投票**：投票记录中存的是 **IP 的单向哈希**（`battles.voter_ip_hash`），不存明文投票者 IP；创建比赛时存创建者 IP 的哈希（`matches.creator_ip_hash`）及当时的地区字符串（`created_ip_region`）。地区串仍属可能重识别的辅助信息，若你面向 GDPR 等严格场景，请自行评估法律依据、保留期限与隐私政策披露。
+- **语言 Cookie**：用户切换界面语言时写入本站第一方 Cookie（`image_match_locale`）；在 **HTTPS** 下会附加 **`Secure`**。若你面向欧盟等法域，请自行判断是否需要 Cookie 横幅或同意流程。
+- **用户生成内容**：图片由比赛举办方通过本应用上传至 imgbb（或你改动的存储）；**举办方**对著作权、非法或有害内容等承担首要责任；请在上游配置滥用举报与删除流程。
+- **成人内容（自动化粗检）**：服务端在上传至图床前使用 **nsfwjs（TensorFlow Node）** 对图片做色情/成人漫画类等粗检，明显命中则拒绝写入图床（HTTP 422，`error` 为 `NSFW_REJECTED`）。**不能**替代人工审核或当地法律下的合规义务；误判或无法加载模型时可能放行并打日志。无原生 TF 的运行时可设 **`DISABLE_NSFW_SCREENING=1`** 关闭（见 `.env.example`）。
+
+实现入口：`src/lib/region-display.ts`、`src/lib/ip.ts`、`src/lib/cn-region-iso.ts`、`src/server/match-service.ts`；页脚有面向终端用户的简要说明（`site.complianceFoot`）。
 
 ## 推到 GitHub
 

@@ -43,16 +43,16 @@ export function LocaleProvider({
   const [locale, setLocaleState] = useState<AppLocale>(initialLocale);
 
   useEffect(() => {
-    setLocaleState(initialLocale);
-  }, [initialLocale]);
-
-  useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
   }, [locale]);
 
   const setLocale = useCallback(
     (next: AppLocale) => {
-      document.cookie = `${LOCALE_COOKIE}=${next};path=/;max-age=31536000;SameSite=Lax`;
+      const secure =
+        typeof window !== "undefined" && window.location.protocol === "https:"
+          ? ";Secure"
+          : "";
+      document.cookie = `${LOCALE_COOKIE}=${next};path=/;max-age=31536000;SameSite=Lax${secure}`;
       setLocaleState(next);
       router.refresh();
     },

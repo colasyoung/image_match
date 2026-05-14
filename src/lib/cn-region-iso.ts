@@ -1,3 +1,5 @@
+import type { AppLocale } from "@/lib/i18n/types";
+
 /**
  * ISO 3166-2:CN 一级行政区代码（不含 CN- 前缀）→ 中文常用称谓。
  * 供 `x-vercel-ip-country-region` / `cf-region-code` 等解析使用。
@@ -37,7 +39,8 @@ const CN_SUBDIVISION_ZH: Record<string, string> = {
   ZJ: "浙江省",
   HK: "香港特别行政区",
   MO: "澳门特别行政区",
-  TW: "台湾省",
+  // IOC 常用中文称谓，热力等中立展示
+  TW: "中华台北",
 };
 
 /** 与 `CN_SUBDIVISION_ZH` 同键，英文界面展示用（`Intl.DisplayNames` 不支持 CN-XX 子码）。 */
@@ -75,17 +78,54 @@ const CN_SUBDIVISION_EN: Record<string, string> = {
   ZJ: "Zhejiang",
   HK: "Hong Kong",
   MO: "Macau",
-  TW: "Taiwan",
+  TW: "Chinese Taipei",
 };
 
 const CN_ZH_NAME_TO_CODE: Record<string, string> = Object.fromEntries(
   Object.entries(CN_SUBDIVISION_ZH).map(([code, zh]) => [zh, code])
 );
 
+/** 存储里仍可能出现的旧称 / 变体 → 与 `TW` 子码同一套 IOC 展示。 */
+const CN_ZH_TW_ALIASES = new Set([
+  "台湾省",
+  "台湾",
+  "台灣",
+  "台灣省",
+  "臺灣",
+  "臺灣省",
+]);
+
+/**
+ * 是否为热力展示中 TW 相关地名的常见片段（与 IOC 用名「中华台北 / Chinese Taipei」映射一致；不匹配单独城市名如「台北」）。
+ * 含已规范为中华台北 / Chinese Taipei 的写法，便于幂等展示。
+ */
+export function matchTaiwanIocSegment(raw: string): boolean {
+  const t = raw.trim();
+  if (!t) return false;
+  if (/^中华台北$/u.test(t) || /^中華台北$/u.test(t)) return true;
+  if (/^chinese taipei$/i.test(t)) return true;
+  if (/[\u4e00-\u9fff]/.test(t)) {
+    return (
+      /^台湾省?$/u.test(t) ||
+      /^台灣省?$/u.test(t) ||
+      /^臺灣省?$/u.test(t) ||
+      /^臺灣$/u.test(t)
+    );
+  }
+  const k = t.toLowerCase();
+  return k === "taiwan" || k === "tw";
+}
+
+/** IOC「中华台北 / Chinese Taipei」称谓（热力等中立展示，与 `Intl` 对 TW 的译名区分）。 */
+export function taiwanIocLocaleLabel(locale: AppLocale): string {
+  return locale === "en" ? CN_SUBDIVISION_EN.TW : CN_SUBDIVISION_ZH.TW;
+}
+
 /** 中文省级称谓（与存储的 `voter_region` 首段一致）→ ISO 3166-2 子码（如 GD、BJ） */
 export function cnZhProvinceNameToSubdivisionCode(name: string): string | null {
   const k = name.trim();
   if (!k) return null;
+  if (CN_ZH_TW_ALIASES.has(k)) return "TW";
   return CN_ZH_NAME_TO_CODE[k] ?? null;
 }
 
@@ -94,6 +134,20 @@ export function cnZhProvinceNameToEnLabel(name: string): string | null {
   const code = cnZhProvinceNameToSubdivisionCode(name);
   if (!code) return null;
   return CN_SUBDIVISION_EN[code] ?? null;
+}
+
+/**
+ * 英文省级短名（与 `CN_SUBDIVISION_EN` 一致，如 Guangdong、Inner Mongolia）→ 中文省级称谓。
+ * 用于「中国｜…」路径里夹杂的英文省名片段。
+ */
+export function cnEnProvinceLabelToZh(enLabel: string): string | null {
+  const k = enLabel.trim().toLowerCase().replace(/\s+province$/i, "").trim();
+  if (!k) return null;
+  if (k === "taiwan" || k === "chinese taipei") return CN_SUBDIVISION_ZH.TW;
+  for (const [code, en] of Object.entries(CN_SUBDIVISION_EN)) {
+    if (en.toLowerCase() === k) return CN_SUBDIVISION_ZH[code];
+  }
+  return null;
 }
 
 /** 直辖市：有省名展示时一般不再重复缀英文城市名 */

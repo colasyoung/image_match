@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useLocale } from "@/contexts/LocaleProvider";
+import { matchStatusDisplay } from "@/lib/match-status-label";
+import { formatRegionHeatLabel } from "@/lib/region-display";
 import { cn } from "@/lib/utils";
 import { MatchDuel } from "@/components/MatchDuel";
 import { LiveLeaderboard } from "@/components/LiveLeaderboard";
@@ -21,7 +23,7 @@ export function MatchExperience({
   rankings: Row[];
   activity: { items: ActivityFeedItem[]; regionCounts: Record<string, number> };
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [liveBoardPreviewOpen, setLiveBoardPreviewOpen] = useState(false);
 
   useEffect(() => {
@@ -35,16 +37,16 @@ export function MatchExperience({
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
       <header className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur lg:col-start-1 lg:row-start-1">
         <div className="flex flex-wrap items-center gap-2 text-xs text-white/45">
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-white/70">{match.status}</span>
-          <span>
-            {t("match.voteTotal")} {match.vote_count}
+          <span className="rounded-full bg-white/10 px-2 py-0.5 text-white/70">
+            {matchStatusDisplay(t, match.status)}
           </span>
-          <span>
-            {t("match.views")} {match.view_count}
-          </span>
+          <span>{t("match.voteTotalLine", { n: match.vote_count })}</span>
+          <span>{t("match.viewsLine", { n: match.view_count })}</span>
           {match.created_ip_region ? (
             <span>
-              {t("match.fromCreator")} {match.created_ip_region}
+              {t("match.fromCreatorLine", {
+                region: formatRegionHeatLabel(match.created_ip_region, locale),
+              })}
             </span>
           ) : null}
         </div>

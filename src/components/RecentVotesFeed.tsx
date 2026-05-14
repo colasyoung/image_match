@@ -132,32 +132,15 @@ function VoteStrip({
   }
 
   const pickedLeft = row.winner_image_id === row.left_image_id;
-  const winnerSrc = pickedLeft ? row.left_thumb : row.right_thumb;
 
   return (
     <li className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-1.5 pl-2.5">
       <Mini src={row.left_thumb} ring={pickedLeft} />
       <span className="shrink-0 text-[10px] text-white/28">{t("common.vs")}</span>
       <Mini src={row.right_thumb} ring={!pickedLeft} />
-      <div className="min-w-0 flex-1 text-[11px] leading-snug">
-        <span className="text-white/60">{t("feed.votePicked", { region })}</span>
-        <span className="ml-1 inline-flex translate-y-0.5 align-middle">
-          {winnerSrc ? (
-            <span className="relative inline-block h-7 w-7 overflow-hidden rounded-md border border-emerald-500/40 shadow-sm shadow-emerald-900/30">
-              <Image
-                src={winnerSrc}
-                alt=""
-                fill
-                className="object-cover"
-                sizes="28px"
-                quality={70}
-                loading="lazy"
-              />
-            </span>
-          ) : null}
+        <span className="min-w-0 flex-1 truncate text-[11px] leading-snug text-white/65">
+          {pickedLeft ? t("feed.votePickedLeft", { region }) : t("feed.votePickedRight", { region })}
         </span>
-        <span className="text-emerald-200/85">{t("feed.thisSide")}</span>
-      </div>
       <time className="shrink-0 tabular-nums text-[10px] text-white/35">{timeLabel}</time>
     </li>
   );

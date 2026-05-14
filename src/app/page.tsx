@@ -1,9 +1,12 @@
 import { HomeView } from "@/app/HomeView";
 import { translateStatic } from "@/lib/i18n/translate-static";
 import { getServerLocale } from "@/lib/i18n/server-locale";
+import { CREATOR_REGION_UNKNOWN, sortCreatorRegionEntries } from "@/lib/home-creator-regions";
 import { listMatchesHome } from "@/server/match-service";
 
 export const dynamic = "force-dynamic";
+
+type HomeRow = Awaited<ReturnType<typeof listMatchesHome>>[number];
 
 export default async function Home() {
   const locale = await getServerLocale();
@@ -20,13 +23,13 @@ export default async function Home() {
   const latest = [...rows].sort(
     (a, b) => new Date(b.match.created_at).getTime() - new Date(a.match.created_at).getTime()
   ).slice(0, 12);
-  const regions = new Map<string, typeof rows>();
+  const regions = new Map<string, HomeRow[]>();
   for (const r of rows) {
-    const k = r.match.created_ip_region ?? "未知";
+    const k = r.match.created_ip_region ?? CREATOR_REGION_UNKNOWN;
     if (!regions.has(k)) regions.set(k, []);
     regions.get(k)!.push(r);
   }
-  const regionEntries = [...regions.entries()];
+  const regionEntries = sortCreatorRegionEntries([...regions.entries()], locale);
 
   return (
     <HomeView hot={hot} latest={latest} regionEntries={regionEntries} homeError={homeError} />

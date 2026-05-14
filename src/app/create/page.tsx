@@ -251,26 +251,61 @@ function CreatePageInner() {
     void refreshUploaded(created);
   }, [created, refreshUploaded]);
 
-  const create = useCallback(async () => {
+  const submitCreate = useCallback(async () => {
+    if (!canCreate || queue.length < 2) return;
     setErr(null);
     setLoading(true);
-    const res = await fetch("/api/create-match", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description: description || undefined, isPublic }),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setErr(friendlyApiError(j.error ?? "", t) || t("api.CreateFail"));
-      return;
+    setUploadPhase(t("create.creatingFull"));
+    try {
+      const fd = new FormData();
+      const queueMeta: Array<{ type: "file"; slot: number } | { type: "url"; url: string }> = [];
+      let slot = 0;
+      for (const q of queue) {
+        if (q.kind === "file") {
+          fd.append(`f_${slot}`, q.file);
+          queueMeta.push({ type: "file", slot: slot });
+          slot += 1;
+        } else {
+          queueMeta.push({ type: "url", url: q.sourceUrl });
+        }
+      }
+      fd.set(
+        "payload",
+        JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || undefined,
+          isPublic,
+          queue: queueMeta,
+        })
+      );
+      fd.set("adminUploadBypassToken", adminUploadBypassToken.trim());
+
+      const res = await fetch("/api/create-match", { method: "POST", body: fd });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        setErr(friendlyApiError(j.error ?? "", t) || t("api.CreateFail"));
+        return;
+      }
+      const j = (await res.json()) as Created & { images?: ImageRow[] };
+      clearQueueRevoke();
+      setPickHint(null);
+      setCreated({ slug: j.slug, manageToken: j.manageToken, id: j.id });
+      setUploadedImages(Array.isArray(j.images) ? j.images : []);
+      setActivatedSuccess(false);
+    } finally {
+      setLoading(false);
+      setUploadPhase(null);
     }
-    const j = (await res.json()) as Created;
-    clearQueueRevoke();
-    setPickHint(null);
-    setCreated({ slug: j.slug, manageToken: j.manageToken, id: j.id });
-    setActivatedSuccess(false);
-  }, [title, description, isPublic, clearQueueRevoke, t]);
+  }, [
+    canCreate,
+    queue,
+    title,
+    description,
+    isPublic,
+    adminUploadBypassToken,
+    clearQueueRevoke,
+    t,
+  ]);
 
   const uploadAll = useCallback(async () => {
     if (!created || queue.length === 0) return;
@@ -349,9 +384,8 @@ function CreatePageInner() {
     );
   };
 
-  const step1Done = Boolean(created);
-  const step2Done = uploadedCount >= 2;
-  const step3Done = activatedSuccess;
+  const setupComplete = uploadedCount >= 2;
+  const activateComplete = activatedSuccess;
 
   return (
     <div className="mx-auto max-w-xl space-y-8 px-4 py-10 pb-16">
@@ -364,9 +398,18 @@ function CreatePageInner() {
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-        <StepBadge n={1} label={t("create.stepName")} active={!step1Done} done={step1Done} />
-        <StepBadge n={2} label={t("create.stepUpload")} active={step1Done && !step2Done && !step3Done} done={step2Done || step3Done} />
-        <StepBadge n={3} label={t("create.stepActivate")} active={step1Done && step2Done && !step3Done} done={step3Done} />
+        <StepBadge
+          n={1}
+          label={t("create.stepSetup")}
+          active={!setupComplete}
+          done={setupComplete}
+        />
+        <StepBadge
+          n={2}
+          label={t("create.stepActivate")}
+          active={setupComplete && !activateComplete}
+          done={activateComplete}
+        />
       </div>
 
       {!created ? (
@@ -426,14 +469,86 @@ function CreatePageInner() {
             </div>
           </details>
 
+          <ImageUploadHints compact />
+
+          <div className="space-y-3 rounded-xl border border-white/10 bg-black/25 p-4">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-medium text-white">{t("create.pickerSectionTitle")}</h2>
+                <p className="mt-1 text-xs text-white/50">
+                  {t("create.uploadHint", { max: DEFAULT_MAX_IMAGES_PER_MATCH })}
+                </p>
+              </div>
+              <div
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium tabular-nums",
+                  queue.length >= 2 ? "bg-emerald-500/20 text-emerald-100" : "bg-white/10 text-amber-100/90"
+                )}
+              >
+                {t("create.queueBeforeSubmitLine", { n: queue.length })}
+              </div>
+            </div>
+
+            {pickHint ? (
+              <p className="rounded-lg border border-emerald-400/35 bg-emerald-500/15 px-3 py-2 text-center text-sm text-emerald-50/95">
+                {pickHint}
+              </p>
+            ) : null}
+
+            <ImagePickButton
+              id="create-draft-pick"
+              disabled={loading || slotsLeft <= 0}
+              busy={loading}
+              label={
+                slotsLeft <= 0
+                  ? adminUploadBypassToken.trim()
+                    ? t("create.pickNoSlotBypass")
+                    : t("create.pickNoSlot10")
+                  : t("create.pickLabel")
+              }
+              subLabel={slotsLeft <= 0 ? t("create.pickSubWait") : t("create.pickSubFull", { n: slotsLeft })}
+              onFiles={addIncomingFiles}
+              onWebImageUrls={addIncomingUrls}
+            />
+
+            {queue.length > 0 ? (
+              <div className="space-y-2">
+                <ul className="flex flex-wrap justify-center gap-2">
+                  {queue.map((q) => (
+                    <li key={q.id} className="relative">
+                      <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-cyan-400/30 bg-black/50">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={q.previewUrl} alt="" className="h-full w-full object-cover" />
+                      </div>
+                      <button
+                        type="button"
+                        className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/80 text-[10px] text-white shadow hover:bg-red-500/90"
+                        onClick={() => removeFromQueue(q.id)}
+                        aria-label={t("create.removeQueueAria")}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {uploadPhase ? <p className="text-center text-sm text-cyan-200/90">{uploadPhase}</p> : null}
+          </div>
+
+          <p className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-xs leading-relaxed text-white/50">
+            {t("create.storageHint")}
+          </p>
+
           {err ? <p className="rounded-lg bg-amber-500/15 px-3 py-2 text-sm text-amber-100/90">{err}</p> : null}
 
           <Button
-            disabled={!canCreate || loading}
+            disabled={!canCreate || queue.length < 2 || loading}
             className="min-h-12 w-full text-base font-semibold"
-            onClick={() => void create()}
+            onClick={() => void submitCreate()}
           >
-            {loading ? t("create.creating") : t("create.createDraft")}
+            {loading ? t("create.creating") : t("create.createSubmit")}
           </Button>
         </div>
       ) : (
@@ -510,29 +625,6 @@ function CreatePageInner() {
           ) : (
             <>
               <ImageUploadHints compact />
-
-              <details className="rounded-xl border border-amber-400/25 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-100/85">
-                <summary className="cursor-pointer select-none font-medium text-amber-200/95">{t("create.adminSummary")}</summary>
-                <p className="mt-2 leading-relaxed text-amber-100/75">{t("create.adminBody")}</p>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    placeholder={t("create.adminPlaceholder")}
-                    value={adminUploadBypassToken}
-                    onChange={(e) => setAdminUploadBypassToken(e.target.value)}
-                    className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="shrink-0 text-xs text-white/55"
-                    onClick={() => setAdminUploadBypassToken("")}
-                  >
-                    {t("create.clear")}
-                  </Button>
-                </div>
-              </details>
 
               <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
                 <div className="flex flex-wrap items-end justify-between gap-2">

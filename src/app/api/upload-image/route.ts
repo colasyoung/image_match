@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { downloadImageForUpload } from "@/lib/fetch-remote-image";
+import { NsfwContentRejectedError } from "@/lib/nsfw-screen";
 import { addImageToMatch, uploadImageToImgbb } from "@/server/match-service";
 import {
   IMGBB_DEFAULT_EXPIRATION_SECONDS,
   IMGBB_UPLOAD_MAX_BYTES,
   resolveImgbbExpirationSeconds,
 } from "@/lib/imgbb";
+
+export const runtime = "nodejs";
 
 /**
  * POST multipart：字段 `matchId`、`manageToken`、`file` 或 `imageUrl`；可选 `adminUploadBypassToken`（与 ADMIN_IMAGE_UPLOAD_BYPASS_SECRET 一致时忽略 10 张上限）。
@@ -51,6 +54,11 @@ export async function GET() {
         "已设置 imgbb 参数 `expiration`（秒）。到期后由 imgbb 自动删除托管文件；数据库中仍会保留 URL，届时链接可能失效，需重新上传或迁移存储。",
       expirationEnvOverride:
         "可选环境变量 IMGBB_EXPIRATION_SECONDS（整数秒，须在 imgbb 允许范围 60–15552000 内；默认 2592000 = 30 天）。",
+    },
+    nsfwScreening: {
+      enabledByDefault: true,
+      disableEnv: "DISABLE_NSFW_SCREENING=1",
+      note: "服务端在上传至 imgbb 前用 nsfwjs（TensorFlow Node）做自动化粗检；误判/无 TF 环境可关闭。命中时 HTTP 422，error 为 NSFW_REJECTED。",
     },
   });
 }
@@ -129,6 +137,9 @@ export async function POST(req: Request) {
       },
     });
   } catch (e) {
+    if (e instanceof NsfwContentRejectedError) {
+      return NextResponse.json({ error: e.message }, { status: 422 });
+    }
     const msg = e instanceof Error ? e.message : "Upload failed";
     return NextResponse.json({ error: msg }, { status: 400 });
   }

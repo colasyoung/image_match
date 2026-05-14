@@ -1,6 +1,8 @@
 import { randomBytes } from "crypto";
 import { customAlphabet } from "nanoid";
-import { resolveImgbbExpirationSeconds } from "@/lib/imgbb";
+import { downloadImageForUpload } from "@/lib/fetch-remote-image";
+import { IMGBB_UPLOAD_MAX_BYTES, resolveImgbbExpirationSeconds } from "@/lib/imgbb";
+import { assertImagePassesNsfwScreen } from "@/lib/nsfw-screen";
 import { DEFAULT_MAX_IMAGES_PER_MATCH } from "@/lib/match-limits";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashIp } from "@/lib/ip";
@@ -86,9 +88,72 @@ export async function createMatch(input: {
   return { slug, manageToken, id: data.id };
 }
 
+/** 仅用于创建失败回滚（service_role）；按 id 删除比赛及其级联数据。 */
+export async function deleteMatchById(matchId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.from("matches").delete().eq("id", matchId);
+  if (error) throw new Error(error.message);
+}
+
+export type InitialMediaEntry =
+  | { kind: "file"; buffer: Buffer; filename: string }
+  | { kind: "url"; url: string };
+
+/**
+ * 原子创建：先插入比赛草稿，再依次上传并写入图片；任一步失败则删除该场比赛（不写残留）。
+ */
+export async function createMatchWithInitialMedia(
+  input: Parameters<typeof createMatch>[0],
+  entries: InitialMediaEntry[],
+  opts?: { bypassImageLimit?: boolean }
+): Promise<{ slug: string; manageToken: string; id: string; images: ImageRow[] }> {
+  if (entries.length < 2) throw new Error("Need at least 2 images");
+  const max = opts?.bypassImageLimit ? 500 : DEFAULT_MAX_IMAGES_PER_MATCH;
+  if (entries.length > max) throw new Error("Too many images");
+
+  const created = await createMatch(input);
+  const images: ImageRow[] = [];
+  try {
+    for (const e of entries) {
+      let buf: Buffer;
+      let name: string;
+      if (e.kind === "file") {
+        buf = e.buffer;
+        name = e.filename;
+        if (buf.byteLength > IMGBB_UPLOAD_MAX_BYTES) {
+          throw new Error(`文件过大：最大 ${IMGBB_UPLOAD_MAX_BYTES / (1024 * 1024)}MB`);
+        }
+      } else {
+        const remote = await downloadImageForUpload(e.url);
+        buf = remote.buffer;
+        name = remote.filename;
+      }
+      const uploaded = await uploadImageToImgbb(buf.toString("base64"), name);
+      const row = await addImageToMatch(
+        {
+          matchId: created.id,
+          manageToken: created.manageToken,
+          imageUrl: uploaded.url,
+          thumbUrl: uploaded.thumb,
+          width: uploaded.width,
+          height: uploaded.height,
+        },
+        opts
+      );
+      images.push(row);
+    }
+  } catch (err) {
+    await deleteMatchById(created.id);
+    throw err;
+  }
+  return { ...created, images };
+}
+
 export async function uploadImageToImgbb(base64: string, filename?: string) {
   const key = process.env.IMGBB_API_KEY;
   if (!key) throw new Error("Missing IMGBB_API_KEY");
+  const buf = Buffer.from(base64, "base64");
+  await assertImagePassesNsfwScreen(buf);
   const expiration = resolveImgbbExpirationSeconds();
   const params = new URLSearchParams();
   params.set("image", base64);

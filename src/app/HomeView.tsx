@@ -3,10 +3,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useLocale } from "@/contexts/LocaleProvider";
+import { HOME_MAX_CREATOR_REGIONS, HOME_MAX_MATCHES_PER_REGION } from "@/lib/home-creator-regions";
+import { formatRegionHeatLabel } from "@/lib/region-display";
 import type { listMatchesHome } from "@/server/match-service";
+import { matchStatusDisplay } from "@/lib/match-status-label";
 import { cn } from "@/lib/utils";
 
 type Row = Awaited<ReturnType<typeof listMatchesHome>>[number];
+
+const MAX_CREATOR_REGIONS = HOME_MAX_CREATOR_REGIONS;
+const MAX_MATCHES_PER_REGION = HOME_MAX_MATCHES_PER_REGION;
 
 export function HomeView({
   hot,
@@ -51,10 +57,7 @@ export function HomeView({
       </header>
 
       <section id="hot" className="space-y-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
-          <h2 className="text-lg font-medium text-white">{t("home.hotLive")}</h2>
-          <span className="text-xs text-white/40">{t("home.hotFormula")}</span>
-        </div>
+        <h2 className="text-lg font-medium text-white">{t("home.hotLive")}</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {hot.map((r) => (
             <MatchCard key={r.match.id} row={r} highlight />
@@ -71,34 +74,56 @@ export function HomeView({
         </div>
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium text-white">{t("home.byCreatorRegion")}</h2>
-        <div className="flex flex-wrap gap-2">
-          {regionEntries.slice(0, 16).map(([region]) => (
-            <a
-              key={region}
-              href={`#region-${encodeURIComponent(region)}`}
-              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 backdrop-blur hover:border-cyan-400/30"
-            >
-              {region === "未知" && locale === "en" ? t("home.unknownRegion") : region}
-            </a>
-          ))}
+      <section id="by-region" className="space-y-4 scroll-mt-20">
+        <div className="space-y-1">
+          <h2 className="text-lg font-medium text-white">{t("home.byCreatorRegion")}</h2>
+          <p className="max-w-2xl text-pretty text-xs leading-relaxed text-white/45">{t("home.byCreatorRegionHint")}</p>
         </div>
-        {regionEntries.slice(0, 8).map(([region, list]) => (
-          <div key={region} id={`region-${encodeURIComponent(region)}`} className="space-y-2">
-            <h3 className="text-sm text-white/70">
-              {region === "未知" && locale === "en" ? t("home.unknownRegion") : region}
-            </h3>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {list
-                .sort((a, b) => b.hotScore - a.hotScore)
-                .slice(0, 4)
-                .map((r) => (
-                  <MatchCard key={r.match.id} row={r} compact />
-                ))}
+        <div className="flex flex-wrap gap-2">
+          {regionEntries.slice(0, MAX_CREATOR_REGIONS).map(([region, list]) => {
+            const label = formatRegionHeatLabel(region, locale);
+            return (
+              <a
+                key={region}
+                href={`#region-${encodeURIComponent(region)}`}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/5 py-1 pl-3 pr-2.5 text-xs text-white/75 backdrop-blur transition hover:border-cyan-400/35 hover:text-white/90"
+              >
+                <span className="min-w-0 truncate">{label}</span>
+                <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-white/55">
+                  {list.length}
+                </span>
+              </a>
+            );
+          })}
+        </div>
+        {regionEntries.slice(0, MAX_CREATOR_REGIONS).map(([region, list]) => {
+          const label = formatRegionHeatLabel(region, locale);
+          return (
+            <div
+              key={region}
+              id={`region-${encodeURIComponent(region)}`}
+              className="scroll-mt-24 space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 sm:p-4"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2 gap-y-1">
+                <h3 className="text-sm font-medium text-white/90">{label}</h3>
+                <span className="text-xs tabular-nums text-white/40">{t("home.regionMatchCount", { n: list.length })}</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {list
+                  .sort((a, b) => b.hotScore - a.hotScore)
+                  .slice(0, MAX_MATCHES_PER_REGION)
+                  .map((r) => (
+                    <MatchCard key={r.match.id} row={r} compact />
+                  ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
+        {regionEntries.length > MAX_CREATOR_REGIONS ? (
+          <p className="text-xs leading-relaxed text-white/40">
+            {t("home.moreRegionsNote", { n: regionEntries.length - MAX_CREATOR_REGIONS })}
+          </p>
+        ) : null}
       </section>
     </div>
   );
@@ -155,22 +180,16 @@ function MatchCard({
       <div className={cn("min-w-0 flex-1 space-y-1", compact ? "py-1 pr-2" : "p-4")}>
         <div className="truncate font-medium text-white">{match.title}</div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/50">
-          <span>
-            {t("home.totalVotes")} {match.vote_count}
-          </span>
-          <span>
-            {t("home.votes24h")} {votes24h}
-          </span>
-          <span>
-            {t("home.active")} {activeVoters}
-          </span>
+          <span>{t("home.totalVotesLine", { n: match.vote_count })}</span>
+          <span>{t("home.votes24hLine", { n: votes24h })}</span>
+          <span>{t("home.activeVotersLine", { n: activeVoters })}</span>
           {highlight ? (
             <span className="text-cyan-300/90">
               {t("home.hotScore")} {hotScore.toFixed(1)}
             </span>
           ) : null}
         </div>
-        <div className="text-[11px] uppercase tracking-wide text-white/35">{match.status}</div>
+        <div className="text-[11px] text-white/35">{matchStatusDisplay(t, match.status)}</div>
       </div>
     </Link>
   );

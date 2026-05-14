@@ -6,6 +6,15 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LocaleProvider, useLocale } from "@/contexts/LocaleProvider";
 import type { AppLocale } from "@/lib/i18n/types";
 
+function SiteFooter() {
+  const { t } = useLocale();
+  return (
+    <footer className="relative z-10 border-t border-white/5 bg-black/15 px-4 py-5 text-center text-[10px] leading-relaxed text-white/38">
+      <p className="mx-auto max-w-3xl">{t("site.complianceFoot")}</p>
+    </footer>
+  );
+}
+
 function TopNavInner() {
   const { t } = useLocale();
   return (
@@ -36,9 +45,12 @@ export function AppShell({
   children: ReactNode;
 }) {
   return (
-    <LocaleProvider initialLocale={initialLocale}>
-      <TopNavInner />
-      <main className="relative z-10 flex-1">{children}</main>
+    <LocaleProvider key={initialLocale} initialLocale={initialLocale}>
+      <div className="flex min-h-full flex-col">
+        <TopNavInner />
+        <main className="relative z-10 flex-1">{children}</main>
+        <SiteFooter />
+      </div>
     </LocaleProvider>
   );
 }

@@ -22,6 +22,7 @@ export function MatchDuel({ slug, disabled }: Props) {
   const [rightImgReady, setRightImgReady] = useState(false);
   const [imgLoadFailed, setImgLoadFailed] = useState(false);
   const loadGenRef = useRef(0);
+  const loadRef = useRef<(() => Promise<void>) | null>(null);
 
   const load = useCallback(async () => {
     await Promise.resolve();
@@ -35,7 +36,7 @@ export function MatchDuel({ slug, disabled }: Props) {
       res = await fetchWithTimeout(`/api/matches/${slug}/next-pair`, undefined, FETCH_LOAD_TIMEOUT_MS);
     } catch (e) {
       if (isAbortError(e)) {
-        void load();
+        void loadRef.current?.();
         return;
       }
       if (gen !== loadGenRef.current) return;
@@ -59,15 +60,23 @@ export function MatchDuel({ slug, disabled }: Props) {
   }, [slug, t]);
 
   useEffect(() => {
-    setLeftImgReady(false);
-    setRightImgReady(false);
-    setImgLoadFailed(false);
+    loadRef.current = load;
+  }, [load]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setLeftImgReady(false);
+      setRightImgReady(false);
+      setImgLoadFailed(false);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [left?.id, right?.id]);
 
   useEffect(() => {
     if (!disabled) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch schedules state updates after network I/O
-      void load();
+      queueMicrotask(() => {
+        void load();
+      });
     }
   }, [disabled, load]);
 
