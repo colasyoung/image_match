@@ -125,9 +125,9 @@ function VoteStrip({
     return (
       <li className="flex flex-col gap-1.5 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-2 pl-2.5 text-[11px] text-white/55 sm:flex-row sm:items-center sm:gap-2 sm:py-1.5">
         <div className="flex shrink-0 items-center gap-2">
-          <Mini src={row.left_thumb} />
+          <Mini src={row.left_thumb} voteOutcome="neutral" />
           <span className="text-white/30">{t("common.vs")}</span>
-          <Mini src={row.right_thumb} />
+          <Mini src={row.right_thumb} voteOutcome="neutral" />
         </div>
         <div className="flex min-w-0 w-full flex-1 items-start justify-between gap-2 sm:items-baseline">
           <span className="min-w-0 flex-1 whitespace-normal break-words leading-snug" title={text}>
@@ -139,15 +139,24 @@ function VoteStrip({
     );
   }
 
-  const pickedLeft = row.winner_image_id === row.left_image_id;
-  const text = pickedLeft ? t("feed.votePickedLeft", { region }) : t("feed.votePickedRight", { region });
+  const hasWinner =
+    !row.skipped &&
+    row.winner_image_id != null &&
+    (row.winner_image_id === row.left_image_id || row.winner_image_id === row.right_image_id);
+  const leftWin = hasWinner && row.winner_image_id === row.left_image_id;
+  const rightWin = hasWinner && row.winner_image_id === row.right_image_id;
+  const text = leftWin
+    ? t("feed.votePickedLeft", { region })
+    : rightWin
+      ? t("feed.votePickedRight", { region })
+      : t("feed.votePickedUnknown", { region });
 
   return (
     <li className="flex flex-col gap-1.5 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-2 pl-2.5 sm:flex-row sm:items-center sm:gap-2 sm:py-1.5">
       <div className="flex shrink-0 items-center gap-2">
-        <Mini src={row.left_thumb} ring={pickedLeft} />
+        <Mini src={row.left_thumb} voteOutcome={leftWin ? "winner" : rightWin ? "loser" : "neutral"} />
         <span className="shrink-0 text-[10px] text-white/28">{t("common.vs")}</span>
-        <Mini src={row.right_thumb} ring={!pickedLeft} />
+        <Mini src={row.right_thumb} voteOutcome={rightWin ? "winner" : leftWin ? "loser" : "neutral"} />
       </div>
       <div className="flex min-w-0 w-full flex-1 items-start justify-between gap-2 sm:items-baseline">
         <span className="min-w-0 flex-1 whitespace-normal break-words text-[11px] leading-snug text-white/65" title={text}>
@@ -159,13 +168,23 @@ function VoteStrip({
   );
 }
 
-function Mini({ src, ring }: { src: string; ring?: boolean }) {
+function Mini({
+  src,
+  voteOutcome = "neutral",
+}: {
+  src: string;
+  /** 有胜负时：仅 winner 强高亮；loser 压暗，避免两侧都像「被选中」。 */
+  voteOutcome?: "winner" | "loser" | "neutral";
+}) {
   if (!src) return <div className="h-8 w-8 shrink-0 rounded-md bg-white/10" />;
   return (
     <div
       className={cn(
-        "relative h-8 w-8 shrink-0 overflow-hidden rounded-md border bg-black/30",
-        ring ? "border-emerald-400/70 ring-1 ring-emerald-400/25" : "border-white/12"
+        "relative h-8 w-8 shrink-0 overflow-hidden rounded-md border bg-black/30 transition-[opacity,filter,box-shadow] duration-200",
+        voteOutcome === "winner" &&
+          "z-[1] border-emerald-400/90 ring-2 ring-emerald-400/55 ring-offset-1 ring-offset-zinc-950",
+        voteOutcome === "loser" && "border-white/[0.08] opacity-[0.42] grayscale",
+        voteOutcome === "neutral" && "border-white/12"
       )}
     >
       <Image
