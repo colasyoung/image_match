@@ -238,6 +238,57 @@ export async function addImageToMatch(
   return img as ImageRow;
 }
 
+export async function replaceImageInMatch(input: {
+  matchId: string;
+  manageToken: string;
+  imageId: string;
+  imageUrl: string;
+  thumbUrl: string;
+  width?: number | null;
+  height?: number | null;
+  contentHash?: string | null;
+}): Promise<ImageRow> {
+  const admin = createAdminClient();
+  const { data: match, error: mErr } = await admin
+    .from("matches")
+    .select("id, manage_token, cover_image")
+    .eq("id", input.matchId)
+    .single();
+  if (mErr || !match || match.manage_token !== input.manageToken) {
+    throw new Error("Unauthorized");
+  }
+  const { data: existing, error: exErr } = await admin
+    .from("images")
+    .select("id, image_url, thumb_url")
+    .eq("id", input.imageId)
+    .eq("match_id", input.matchId)
+    .maybeSingle();
+  if (exErr || !existing) throw new Error("Image not found");
+
+  const oldMain = existing.image_url as string;
+  const oldThumb = existing.thumb_url as string | null;
+
+  const { data: img, error } = await admin
+    .from("images")
+    .update({
+      image_url: input.imageUrl,
+      thumb_url: input.thumbUrl,
+      width: input.width ?? null,
+      height: input.height ?? null,
+      content_hash: input.contentHash ?? null,
+    })
+    .eq("id", input.imageId)
+    .select("*")
+    .single();
+  if (error || !img) throw new Error(error?.message ?? "update image failed");
+
+  const cover = match.cover_image as string | null;
+  if (cover && (cover === oldMain || cover === oldThumb)) {
+    await admin.from("matches").update({ cover_image: input.imageUrl }).eq("id", input.matchId);
+  }
+  return img as ImageRow;
+}
+
 export async function activateMatch(matchId: string, manageToken: string) {
   const admin = createAdminClient();
   const { data: match } = await admin.from("matches").select("id, manage_token, status").eq("id", matchId).single();
@@ -556,7 +607,7 @@ export async function listMatchesHome(): Promise<
   const topImageByMatch = new Map<string, { elo: number; url: string }>();
   for (const img of homeImages ?? []) {
     const elo = Number(img.elo_rating ?? 0);
-    const url = (img.image_url || img.thumb_url || "").trim();
+    const url = (img.thumb_url || img.image_url || "").trim();
     if (!url) continue;
     const mid = img.match_id as string;
     const prev = topImageByMatch.get(mid);

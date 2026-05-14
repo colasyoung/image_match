@@ -7,6 +7,7 @@ import { HOME_MAX_CREATOR_REGIONS, HOME_MAX_MATCHES_PER_REGION } from "@/lib/hom
 import { formatRegionHeatLabel } from "@/lib/region-display";
 import type { listMatchesHome } from "@/server/match-service";
 import { matchStatusDisplay } from "@/lib/match-status-label";
+import { publicImageSrc } from "@/lib/public-image-src";
 import { cn } from "@/lib/utils";
 
 type Row = Awaited<ReturnType<typeof listMatchesHome>>[number];
@@ -157,10 +158,10 @@ function MatchCard({
       >
         {cover ? (
           <Image
-            src={cover}
+            src={publicImageSrc(cover)}
             alt=""
             fill
-            quality={88}
+            quality={82}
             className={cn(
               "object-cover opacity-90 transition group-hover:opacity-100",
               /* 裁切锚点略偏上，多数人像/主体会偏中上，减少「只剩胸口或背景」 */
@@ -172,6 +173,7 @@ function MatchCard({
                 : "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, min(420px, 34vw)"
             }
             priority={Boolean(highlight && !compact)}
+            loading={highlight && !compact ? "eager" : "lazy"}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-white/35">{t("home.noCover")}</div>

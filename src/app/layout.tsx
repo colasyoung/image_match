@@ -27,6 +27,11 @@ export default async function RootLayout({
 
   return (
     <html lang={locale === "zh" ? "zh-CN" : "en"} className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        <link rel="dns-prefetch" href="https://i.ibb.co" />
+        <link rel="preconnect" href="https://i.ibb.co" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://image.ibb.co" />
+      </head>
       <body className="min-h-full bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 text-foreground">
         <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(34,211,238,0.12),_transparent_55%)]" />
         <AppShell initialLocale={locale}>{children}</AppShell>

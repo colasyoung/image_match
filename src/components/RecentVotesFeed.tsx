@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/contexts/LocaleProvider";
 import { FETCH_LOAD_TIMEOUT_MS, fetchWithTimeout, isAbortError } from "@/lib/fetch-with-timeout";
 import { formatRegionHeatLabel } from "@/lib/region-display";
+import { publicImageSrc } from "@/lib/public-image-src";
 import type { ActivityFeedItem } from "@/server/match-service";
 import { cn } from "@/lib/utils";
 
@@ -155,7 +156,15 @@ function Mini({ src, ring }: { src: string; ring?: boolean }) {
         ring ? "border-emerald-400/70 ring-1 ring-emerald-400/25" : "border-white/12"
       )}
     >
-      <Image src={src} alt="" fill className="object-cover" sizes="32px" quality={70} loading="lazy" />
+      <Image
+        src={publicImageSrc(src)}
+        alt=""
+        fill
+        className="object-cover"
+        sizes="32px"
+        quality={65}
+        loading="lazy"
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { useLocale } from "@/contexts/LocaleProvider";
 import { FETCH_LOAD_TIMEOUT_MS, fetchWithTimeout, isAbortError } from "@/lib/fetch-with-timeout";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { ImageRow } from "@/server/match-service";
+import { publicImageSrc } from "@/lib/public-image-src";
 import { cn } from "@/lib/utils";
 
 type Row = { rank: number; image: ImageRow; winRate: number };
@@ -19,7 +20,7 @@ function focusableIn(container: HTMLElement): HTMLElement[] {
 }
 
 function fullImageSrc(img: ImageRow): string {
-  return (img.image_url || img.thumb_url || "").trim();
+  return publicImageSrc((img.image_url || img.thumb_url || "").trim());
 }
 
 export function LiveLeaderboard({
@@ -235,8 +236,8 @@ export function LiveLeaderboard({
                     "h-auto max-h-[min(78vh,1080px)] w-auto max-w-[min(96vw,1200px)] rounded-lg border border-white/10 object-contain shadow-2xl transition-opacity duration-300",
                     !previewFullLoaded && "opacity-0"
                   )}
-                  sizes="(max-width: 1200px) 96vw, 1200px"
-                  quality={90}
+                  sizes="(max-width: 768px) min(96vw, 720px), min(1200px, 85vw)"
+                  quality={78}
                   priority
                   onLoadingComplete={() => setPreviewFullLoaded(true)}
                   onError={() => {
@@ -303,12 +304,13 @@ export function LiveLeaderboard({
                 }}
               >
                 <Image
-                  src={r.image.thumb_url || r.image.image_url}
+                  src={publicImageSrc(r.image.thumb_url || r.image.image_url)}
                   alt=""
                   fill
                   className="object-cover transition group-hover:opacity-90"
                   sizes="44px"
-                  quality={75}
+                  quality={68}
+                  loading="lazy"
                 />
               </button>
               <div className="min-w-0 flex-1 overflow-hidden">

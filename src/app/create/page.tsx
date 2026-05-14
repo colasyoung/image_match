@@ -11,6 +11,7 @@ import { useAdminUploadBypass } from "@/hooks/useAdminUploadBypass";
 import { friendlyApiError } from "@/lib/i18n/api-errors";
 import { ADMIN_UPLOAD_BYPASS_QUERY } from "@/lib/admin-upload-bypass";
 import { DEFAULT_MAX_IMAGES_PER_MATCH, effectiveImageCap } from "@/lib/match-limits";
+import { publicImageSrc } from "@/lib/public-image-src";
 import { cn } from "@/lib/utils";
 
 type Created = { slug: string; manageToken: string; id: string };
@@ -653,12 +654,13 @@ function CreatePageInner() {
                         className="relative h-14 w-14 overflow-hidden rounded-lg border border-white/15 bg-black/40 shadow-sm"
                       >
                         <Image
-                          src={img.thumb_url || img.image_url}
+                          src={publicImageSrc(img.thumb_url || img.image_url)}
                           alt=""
                           fill
                           className="object-cover"
                           sizes="56px"
-                          quality={70}
+                          quality={65}
+                          loading="lazy"
                         />
                       </li>
                     ))}

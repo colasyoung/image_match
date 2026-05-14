@@ -12,6 +12,7 @@ import { friendlyApiError } from "@/lib/i18n/api-errors";
 import { FETCH_LOAD_TIMEOUT_MS, fetchWithTimeout, isAbortError } from "@/lib/fetch-with-timeout";
 import { ADMIN_UPLOAD_BYPASS_QUERY } from "@/lib/admin-upload-bypass";
 import { DEFAULT_MAX_IMAGES_PER_MATCH, effectiveImageCap } from "@/lib/match-limits";
+import { publicImageSrc } from "@/lib/public-image-src";
 import { cn } from "@/lib/utils";
 
 type MatchApi = {
@@ -179,6 +180,33 @@ export function ManageClient({ slug }: { slug: string }) {
       return;
     }
     window.location.href = "/";
+  };
+
+  const replaceImage = async (imageId: string, opts: { file?: File; imageUrl?: string }) => {
+    if (!token || !data) return;
+    const bypass = adminUploadBypassToken.trim();
+    setUploading(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.set("matchId", data.match.id);
+      fd.set("manageToken", token);
+      fd.set("replaceImageId", imageId);
+      if (opts.file) fd.set("file", opts.file);
+      else if (opts.imageUrl) fd.set("imageUrl", opts.imageUrl);
+      if (bypass) fd.set("adminUploadBypassToken", bypass);
+      const res = await fetch("/api/upload-image", { method: "POST", body: fd });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ? friendlyApiError(String(j.error), t) : t("manage.replaceFail"));
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : t("manage.replaceFail"));
+      setUploading(false);
+      return;
+    }
+    setUploading(false);
+    await load();
   };
 
   const deleteImage = async (imageId: string) => {
@@ -535,15 +563,55 @@ export function ManageClient({ slug }: { slug: string }) {
                   >
                     <div className="relative aspect-square w-full">
                       <Image
-                        src={img.thumb_url || img.image_url}
+                        src={publicImageSrc(img.thumb_url || img.image_url)}
                         alt=""
                         fill
                         className="object-cover"
                         sizes="(max-width:768px) 50vw, 180px"
-                        quality={75}
+                        quality={70}
+                        loading="lazy"
                       />
                     </div>
-                    <div className="p-2">
+                    <input
+                      id={`manage-replace-file-${img.id}`}
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      tabIndex={-1}
+                      aria-hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        void replaceImage(img.id, { file });
+                      }}
+                    />
+                    <div className="space-y-1.5 p-2">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={loading || uploading}
+                          className="w-full py-1.5 text-[11px] !border-cyan-400/35 !text-cyan-50"
+                          onClick={() => document.getElementById(`manage-replace-file-${img.id}`)?.click()}
+                        >
+                          {t("manage.replaceFile")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={loading || uploading}
+                          className="w-full py-1.5 text-[11px] !border-cyan-400/35 !text-cyan-50"
+                          onClick={() => {
+                            const raw = window.prompt(t("manage.replaceUrlPrompt"));
+                            const u = raw?.trim();
+                            if (!u) return;
+                            void replaceImage(img.id, { imageUrl: u });
+                          }}
+                        >
+                          {t("manage.replaceUrl")}
+                        </Button>
+                      </div>
                       <Button
                         type="button"
                         variant="danger"

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { downloadImageForUpload } from "@/lib/fetch-remote-image";
-import { addImageToMatch, uploadImageToImgbb } from "@/server/match-service";
+import { addImageToMatch, replaceImageInMatch, uploadImageToImgbb } from "@/server/match-service";
 import {
   IMGBB_DEFAULT_EXPIRATION_SECONDS,
   IMGBB_UPLOAD_MAX_BYTES,
@@ -27,6 +27,8 @@ export async function GET() {
         manageToken: "该比赛的管理 token",
         file: "单个图片文件（与 imageUrl 二选一）",
         imageUrl: "可选：公网 http(s) 图片地址，由服务端拉取后再传 imgbb（与 file 二选一）",
+        replaceImageId:
+          "可选：本场已有图片的 UUID。若填写则上传后**替换**该条记录（不增加张数、不占 10 张上限），保留 Elo 与对战统计；须与 matchId、manageToken 同属一场比赛。",
         adminUploadBypassToken:
           "可选：与部署环境 ADMIN_IMAGE_UPLOAD_BYPASS_SECRET 完全一致时，忽略每场比赛 10 张上限。浏览器侧来源：创建页/管理页折叠输入框，或 URL 查询参数 uploadBypass（见 README 与 .env.example）。仅服务端校验；勿泄露。",
       },
@@ -62,6 +64,7 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const matchId = String(form.get("matchId") ?? "");
     const manageToken = String(form.get("manageToken") ?? "");
+    const replaceImageId = String(form.get("replaceImageId") ?? "").trim();
     const imageUrlField = String(form.get("imageUrl") ?? "").trim();
     const adminBypassRaw = String(form.get("adminUploadBypassToken") ?? "").trim();
     const bypassSecret = process.env.ADMIN_IMAGE_UPLOAD_BYPASS_SECRET?.trim();
@@ -110,17 +113,27 @@ export async function POST(req: Request) {
     }
 
     const uploaded = await uploadImageToImgbb(buf.toString("base64"), name);
-    const row = await addImageToMatch(
-      {
-        matchId,
-        manageToken,
-        imageUrl: uploaded.url,
-        thumbUrl: uploaded.thumb,
-        width: uploaded.width,
-        height: uploaded.height,
-      },
-      { bypassImageLimit: bypassOk }
-    );
+    const row = replaceImageId
+      ? await replaceImageInMatch({
+          matchId,
+          manageToken,
+          imageId: replaceImageId,
+          imageUrl: uploaded.url,
+          thumbUrl: uploaded.thumb,
+          width: uploaded.width,
+          height: uploaded.height,
+        })
+      : await addImageToMatch(
+          {
+            matchId,
+            manageToken,
+            imageUrl: uploaded.url,
+            thumbUrl: uploaded.thumb,
+            width: uploaded.width,
+            height: uploaded.height,
+          },
+          { bypassImageLimit: bypassOk }
+        );
     return NextResponse.json({
       image: row,
       storage: {

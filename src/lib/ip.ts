@@ -23,6 +23,21 @@ function headerOne(headers: Headers, names: readonly string[]): string | null {
 }
 
 /**
+ * 边缘请求头里的城市/地区名常为 URL 编码（如 `New%20York`）；解码失败则原样返回。
+ * `+` 按常见 querystring 约定视作空格。
+ */
+function decodeGeoHeaderValue(raw: string | null | undefined): string {
+  const t = (raw ?? "").trim();
+  if (!t) return "";
+  if (!/%[0-9A-Fa-f]{2}/.test(t) && !t.includes("+")) return t;
+  try {
+    return decodeURIComponent(t.replace(/\+/g, " "));
+  } catch {
+    return t;
+  }
+}
+
+/**
  * 从边缘请求头解析「地区」展示串（写入数据库后仅作粗略统计与展示）。
  * - 中国（当前主部署在 Vercel）：用 `x-vercel-ip-country-region`（ISO 3166-2 子码）映射到省/自治区/直辖市，城市用 `x-vercel-ip-city`。
  * - 非中国：保持「国家｜城市」。
@@ -33,9 +48,9 @@ export function regionFromHeaders(headers: Headers): string {
   const countryRaw = headerOne(headers, ["x-vercel-ip-country", "cf-ipcountry"]);
   const country = countryRaw ? countryRaw.toUpperCase() : "";
 
-  const city = headerOne(headers, ["x-vercel-ip-city", "cf-ipcity"]);
+  const city = decodeGeoHeaderValue(headerOne(headers, ["x-vercel-ip-city", "cf-ipcity"]));
   const regionCodeRaw = headerOne(headers, ["x-vercel-ip-country-region", "cf-region-code"]);
-  const cfRegionLabel = headerOne(headers, ["cf-region"]);
+  const cfRegionLabel = decodeGeoHeaderValue(headerOne(headers, ["cf-region"])) || null;
 
   if (country === "CN") {
     const sub = normalizeChinaRegionCode(regionCodeRaw);

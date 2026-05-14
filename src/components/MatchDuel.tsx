@@ -5,8 +5,14 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { useLocale } from "@/contexts/LocaleProvider";
 import { friendlyApiError } from "@/lib/i18n/api-errors";
-import { FETCH_LOAD_TIMEOUT_MS, fetchWithTimeout, isAbortError } from "@/lib/fetch-with-timeout";
+import {
+  FETCH_LOAD_TIMEOUT_MS,
+  IMAGE_DECODE_STALL_RETRY_MS,
+  fetchWithTimeout,
+  isAbortError,
+} from "@/lib/fetch-with-timeout";
 import type { ImageRow } from "@/server/match-service";
+import { voteCardImageSrc } from "@/lib/public-image-src";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -80,14 +86,14 @@ export function MatchDuel({ slug, disabled }: Props) {
     }
   }, [disabled, load]);
 
-  /** 配对已返回但缩略图长时间未完成解码/拉取时，重新拉一对（防 CDN / 浏览器卡住） */
+  /** 配对已返回但大图长时间未完成解码/拉取时，重新拉一对（须明显长于 API 超时，避免误打断） */
   useEffect(() => {
     if (disabled) return;
     if (!left || !right) return;
     if (leftImgReady && rightImgReady) return;
     const id = window.setTimeout(() => {
       void load();
-    }, FETCH_LOAD_TIMEOUT_MS);
+    }, IMAGE_DECODE_STALL_RETRY_MS);
     return () => window.clearTimeout(id);
   }, [disabled, left, right, leftImgReady, rightImgReady, load]);
 
@@ -213,6 +219,7 @@ export function MatchDuel({ slug, disabled }: Props) {
           side={t("duel.left")}
           busy={gateBusy}
           revealPair={revealPair}
+          loadOrder={0}
           onPick={() => void vote(left, right)}
           onImageReady={() => setLeftImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -222,6 +229,7 @@ export function MatchDuel({ slug, disabled }: Props) {
           side={t("duel.right")}
           busy={gateBusy}
           revealPair={revealPair}
+          loadOrder={1}
           onPick={() => void vote(right, left)}
           onImageReady={() => setRightImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -247,6 +255,7 @@ function DuelCard({
   onPick,
   busy,
   revealPair,
+  loadOrder,
   onImageReady,
   onImageError,
 }: {
@@ -256,11 +265,14 @@ function DuelCard({
   busy: boolean;
   /** 左右图都已解码完成：此时才同时露出画面，此前两侧均保持加载态 */
   revealPair: boolean;
+  /** 0=先抢首包（左图），1=后载（右图），减轻手机端双连接并发与解码压力 */
+  loadOrder: 0 | 1;
   onImageReady: () => void;
   onImageError: () => void;
 }) {
   const { t } = useLocale();
-  const src = image.image_url;
+  const src = voteCardImageSrc(image);
+  const primary = loadOrder === 0;
   return (
     <motion.button
       type="button"
@@ -289,15 +301,15 @@ function DuelCard({
           src={src}
           alt=""
           fill
-          priority
-          fetchPriority="high"
-          quality={82}
+          priority={primary}
+          fetchPriority={primary ? "high" : "low"}
+          quality={72}
           className={cn(
             "object-cover transition duration-300",
             revealPair && !busy && "group-hover:scale-[1.02]",
             !revealPair && "opacity-0"
           )}
-          sizes="(max-width:768px) 46vw, 50vw"
+          sizes="(max-width: 768px) min(48vw, 420px), min(50vw, 520px)"
           onLoadingComplete={onImageReady}
           onError={onImageError}
         />

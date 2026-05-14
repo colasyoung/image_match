@@ -20,6 +20,24 @@ function normalizeRegionSeparators(raw: string): string {
   return raw.replace(/\|/g, SEP);
 }
 
+/** 历史数据或上游头里可能含 `New%20York` 等；按 `｜` 分段解码，失败则保留原段。 */
+function decodeUrlEncodedGeoSegments(raw: string): string {
+  if (!raw) return raw;
+  return raw
+    .split(SEP)
+    .map((part) => {
+      const t = part.trim();
+      if (!t) return t;
+      if (!/%[0-9A-Fa-f]{2}/.test(t) && !t.includes("+")) return t;
+      try {
+        return decodeURIComponent(t.replace(/\+/g, " "));
+      } catch {
+        return t;
+      }
+    })
+    .join(SEP);
+}
+
 let zhRegionNames: Intl.DisplayNames | null = null;
 let enRegionNames: Intl.DisplayNames | null = null;
 
@@ -189,7 +207,8 @@ export function formatRegionHeatLabel(
   stored: string | null | undefined,
   locale: AppLocale = "zh"
 ): string {
-  const s = normalizeRegionSeparators((stored ?? "").trim());
+  const s0 = normalizeRegionSeparators((stored ?? "").trim());
+  const s = decodeUrlEncodedGeoSegments(s0);
   if (!s || s === "未知") return translateStatic(locale, "region.unknown");
 
   const microCollapsed = collapseMicrostatePath(s, locale);
