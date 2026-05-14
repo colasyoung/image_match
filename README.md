@@ -79,7 +79,7 @@ npm run dev
 
 若你在 Cloudflare 上为仓库配置了 **Git 自动构建**，默认构建命令常为 **`npx opennextjs-cloudflare build`**。本仓库已包含 **`@opennextjs/cloudflare` + `wrangler.jsonc` + `open-next.config.ts`**，与上述命令兼容。
 
-- **环境变量**：在 Cloudflare 项目的 **Settings → Variables** 中为 Worker 配置与 `.env.example` / Vercel 相同的变量（如 `NEXT_PUBLIC_SUPABASE_*`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等），否则运行期接口会失败。
+- **环境变量**：在 Cloudflare 项目的 **Settings → Variables** 中为 Worker 配置与 `.env.example` / Vercel 相同的变量（如 `NEXT_PUBLIC_SUPABASE_*`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等），否则运行期接口会失败。若 **`/api/health` 正常但首页打不开**，多半是首页读库失败或此前 **Google Fonts** 在边缘拉取失败；本仓库已改为**系统字体栈**，请重新部署后再试。
 - **`wrangler.jsonc` 里的 `name` / `services[0].service`** 需与你在 Cloudflare 控制台里的 **Worker 名称**一致（当前为 `image-match`；若你的服务名不同，请改两处保持一致）。
 
 **构建成功但浏览器「访问不到」或白屏时**，请逐项核对：
@@ -91,7 +91,7 @@ npm run dev
 2. **先探活**：浏览器或终端访问 **`/api/health`**，例如 `https://…workers.dev/api/health`  
    应返回 JSON：`{"ok":true,"service":"image-match"}`。若此处 404/522，说明流量没到 Worker 或路由未生效。
 3. **环境变量是否在 Worker 上配置**  
-   与 `.env.example` 一致：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等。缺省时首页/API 会报错或空白。敏感项用 **Encrypt**。
+   与 `.env.example` 一致：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等。缺省时首页/API 会报错或空白。敏感项用 **Encrypt**。若 **`/api/health` 返回 ok 但 `/` 仍报错**，几乎总是 **Supabase 变量未进 Worker** 或拼写不一致；首页会尽量显示错误说明，仍以控制台 Variables 为准。
 4. **自定义域名**  
    若绑了自有域名，需在 DNS 按 Cloudflare 提示指向该 Worker，并等待生效；未生效前请先用 `*.workers.dev` 验证。
 5. **本地看实时日志**（可选）：安装依赖后执行 `npx wrangler tail`（需登录 Cloudflare），再刷新页面看服务端报错。

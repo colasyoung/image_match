@@ -5,7 +5,14 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const rows = await listMatchesHome();
+  let rows: Awaited<ReturnType<typeof listMatchesHome>> = [];
+  let homeError: string | null = null;
+  try {
+    rows = await listMatchesHome();
+  } catch (e) {
+    homeError = e instanceof Error ? e.message : "首页数据加载失败";
+  }
+
   const hot = [...rows].sort((a, b) => b.hotScore - a.hotScore).slice(0, 10);
   const latest = [...rows].sort(
     (a, b) => new Date(b.match.created_at).getTime() - new Date(a.match.created_at).getTime()
@@ -19,6 +26,19 @@ export default async function Home() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-12 px-4 py-10">
+      {homeError ? (
+        <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-4 py-3 text-sm text-amber-50">
+          <p className="font-medium text-amber-100">首页暂时读不到数据库</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-100/85">{homeError}</p>
+          <p className="mt-2 text-xs text-amber-100/70">
+            若部署在 <strong className="text-amber-50">Cloudflare Workers</strong>，请到该 Worker 的{" "}
+            <strong className="text-amber-50">Settings → Variables</strong> 配置与{" "}
+            <code className="rounded bg-black/30 px-1">.env.example</code> 相同的变量（含{" "}
+            <code className="rounded bg-black/30 px-1">NEXT_PUBLIC_SUPABASE_URL</code>、
+            <code className="rounded bg-black/30 px-1">SUPABASE_SERVICE_ROLE_KEY</code> 等）。
+          </p>
+        </div>
+      ) : null}
       <header className="space-y-4 text-center md:text-left">
         <p className="text-sm uppercase tracking-[0.2em] text-cyan-300/80">Image Match</p>
         <h1 className="text-balance text-4xl font-semibold text-white md:text-5xl">
