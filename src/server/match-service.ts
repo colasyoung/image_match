@@ -162,8 +162,17 @@ export async function activateMatch(matchId: string, manageToken: string) {
   if (!match || match.manage_token !== manageToken) throw new Error("Unauthorized");
   const { count } = await admin.from("images").select("*", { count: "exact", head: true }).eq("match_id", matchId);
   if ((count ?? 0) < 2) throw new Error("Need at least 2 images");
-  const { error } = await admin.from("matches").update({ status: "active" }).eq("id", matchId);
+  const { data: updated, error } = await admin
+    .from("matches")
+    .update({ status: "active" })
+    .eq("id", matchId)
+    .in("status", ["draft", "paused"])
+    .select("status")
+    .maybeSingle();
   if (error) throw new Error(error.message);
+  if (!updated || updated.status !== "active") {
+    throw new Error("Cannot activate from current state");
+  }
 }
 
 export async function updateMatchBySlug(
@@ -193,6 +202,40 @@ export async function deleteMatch(slug: string, manageToken: string) {
   if (!match || match.manage_token !== manageToken) throw new Error("Unauthorized");
   const { error } = await admin.from("matches").delete().eq("id", match.id);
   if (error) throw new Error(error.message);
+}
+
+export async function deleteImageFromMatch(slug: string, imageId: string, manageToken: string) {
+  const admin = createAdminClient();
+  const { data: match } = await admin
+    .from("matches")
+    .select("id, manage_token, status, cover_image")
+    .eq("slug", slug)
+    .single();
+  if (!match || match.manage_token !== manageToken) throw new Error("Unauthorized");
+  const { data: img } = await admin
+    .from("images")
+    .select("id")
+    .eq("id", imageId)
+    .eq("match_id", match.id)
+    .maybeSingle();
+  if (!img) throw new Error("Image not found");
+  const { error: delErr } = await admin.from("images").delete().eq("id", imageId);
+  if (delErr) throw new Error(delErr.message);
+
+  const { count } = await admin.from("images").select("*", { count: "exact", head: true }).eq("match_id", match.id);
+  const remaining = count ?? 0;
+  if (remaining < 2 && match.status === "active") {
+    await admin.from("matches").update({ status: "paused" }).eq("id", match.id);
+  }
+  const { data: first } = await admin
+    .from("images")
+    .select("thumb_url, image_url")
+    .eq("match_id", match.id)
+    .order("sort_order", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const cover = first ? first.thumb_url ?? first.image_url : null;
+  await admin.from("matches").update({ cover_image: cover }).eq("id", match.id);
 }
 
 export async function getMatchForPublic(slug: string, opts?: { manageToken?: string }): Promise<{
