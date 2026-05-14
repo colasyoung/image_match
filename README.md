@@ -1,6 +1,6 @@
 # Image Match
 
-匿名图片 1v1 对战与 **Elo** 实时排行榜（Next.js + Supabase + imgbb）。详见仓库内 `supabase/migrations/` 与 `src/server/match-service.ts`。
+匿名图片 1v1 对战与**实时人气**（Next.js + Supabase + imgbb）。详见仓库内 `supabase/migrations/` 与 `src/server/match-service.ts`。
 
 ## 本地测试（推荐先做）
 

@@ -3,9 +3,8 @@ import { z } from "zod";
 import {
   activateMatch,
   deleteMatch,
+  getActivityFeed,
   getMatchForPublic,
-  recentVoteRegions,
-  ratingHistoryForMatch,
   updateMatchBySlug,
 } from "@/server/match-service";
 
@@ -23,13 +22,11 @@ export async function GET(req: Request, ctx: Params) {
   try {
     const bundle = await getMatchForPublic(slug, { manageToken: token });
     if (!bundle) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const history = bundle.match.show_rating_history ? await ratingHistoryForMatch(slug) : [];
-    const regions = await recentVoteRegions(slug);
+    const activity = (await getActivityFeed(slug)) ?? { items: [], regionCounts: {} };
     return NextResponse.json({
       match: publicMatch(bundle.match as unknown as Record<string, unknown>),
       images: bundle.images,
-      ratingHistory: history,
-      recentRegions: regions,
+      activity,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed";

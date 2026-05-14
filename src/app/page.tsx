@@ -22,10 +22,10 @@ export default async function Home() {
       <header className="space-y-4 text-center md:text-left">
         <p className="text-sm uppercase tracking-[0.2em] text-cyan-300/80">Image Match</p>
         <h1 className="text-balance text-4xl font-semibold text-white md:text-5xl">
-          图片对战 · Elo 实时排名
+          图片对战 · 实时人气
         </h1>
         <p className="max-w-2xl text-pretty text-white/60">
-          无需登录创建比赛，匿名 1v1 投票，排行榜随对战实时更新。适合摄影评选、Logo PK、AI 生图对比。
+          无需登录创建比赛，匿名 1v1 投票，人气榜随大家的选择实时变化。适合摄影评选、Logo PK、AI 生图对比。
         </p>
         <div className="flex flex-wrap justify-center gap-3 md:justify-start">
           <Link

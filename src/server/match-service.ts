@@ -516,3 +516,66 @@ export async function recentVoteRegions(slug: string, limit = 30) {
     .limit(limit);
   return (data ?? []).filter((b) => !b.skipped);
 }
+
+export type ActivityFeedItem = {
+  id: string;
+  created_at: string;
+  skipped: boolean;
+  voter_region: string | null;
+  left_image_id: string;
+  right_image_id: string;
+  winner_image_id: string | null;
+  left_thumb: string;
+  right_thumb: string;
+  winner_thumb: string | null;
+};
+
+export async function getActivityFeed(
+  slug: string,
+  limit = 40
+): Promise<{ items: ActivityFeedItem[]; regionCounts: Record<string, number> } | null> {
+  const bundle = await getMatchForPublic(slug);
+  if (!bundle) return null;
+  if (!bundle.match.show_rating_history) {
+    return { items: [], regionCounts: {} };
+  }
+  const admin = createAdminClient();
+  const { data: battles, error } = await admin
+    .from("battles")
+    .select("id, created_at, skipped, voter_region, left_image_id, right_image_id, winner_image_id")
+    .eq("match_id", bundle.match.id)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+
+  const imgMap = new Map(bundle.images.map((i) => [i.id, i]));
+  const regionCounts: Record<string, number> = {};
+  const items: ActivityFeedItem[] = [];
+
+  for (const b of battles ?? []) {
+    const li = imgMap.get(b.left_image_id);
+    const ri = imgMap.get(b.right_image_id);
+    const wi = b.winner_image_id ? imgMap.get(b.winner_image_id) : null;
+    const left_thumb = li?.thumb_url ?? li?.image_url ?? "";
+    const right_thumb = ri?.thumb_url ?? ri?.image_url ?? "";
+    const winner_thumb = wi ? wi.thumb_url ?? wi.image_url : null;
+    items.push({
+      id: b.id,
+      created_at: b.created_at,
+      skipped: b.skipped,
+      voter_region: b.voter_region,
+      left_image_id: b.left_image_id,
+      right_image_id: b.right_image_id,
+      winner_image_id: b.winner_image_id,
+      left_thumb,
+      right_thumb,
+      winner_thumb,
+    });
+    if (!b.skipped) {
+      const r = b.voter_region ?? "未知";
+      regionCounts[r] = (regionCounts[r] ?? 0) + 1;
+    }
+  }
+
+  return { items, regionCounts };
+}

@@ -148,9 +148,8 @@ function DuelCard({
         <Image src={src} alt="" fill className="object-cover" sizes="(max-width:768px) 100vw, 50vw" unoptimized />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80" />
       </div>
-      <div className="flex items-center justify-between px-4 py-3 text-sm text-white/90">
-        <span>Elo {Math.round(image.elo_rating)}</span>
-        <span className="text-cyan-300/90 opacity-0 transition group-hover:opacity-100">点选胜出</span>
+      <div className="flex items-center justify-center px-4 py-3 text-center text-xs text-white/55">
+        点选你更喜欢的一边
       </div>
     </motion.button>
   );

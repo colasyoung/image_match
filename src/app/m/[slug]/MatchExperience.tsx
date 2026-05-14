@@ -3,31 +3,28 @@
 import { useEffect } from "react";
 import { MatchDuel } from "@/components/MatchDuel";
 import { LiveLeaderboard } from "@/components/LiveLeaderboard";
-import { EloHistoryChart } from "@/components/EloHistoryChart";
-import type { ImageRow, MatchRow } from "@/server/match-service";
+import { RecentVotesFeed } from "@/components/RecentVotesFeed";
+import type { ActivityFeedItem, ImageRow, MatchRow } from "@/server/match-service";
 
 type Row = { rank: number; image: ImageRow; winRate: number };
 
 export function MatchExperience({
   slug,
   match,
-  images,
   rankings,
-  ratingHistory,
-  recentRegions,
+  activity,
 }: {
   slug: string;
   match: MatchRow;
-  images: ImageRow[];
   rankings: Row[];
-  ratingHistory: { image_id: string; old_rating: number; new_rating: number; created_at: string }[];
-  recentRegions: { voter_region: string | null }[];
+  activity: { items: ActivityFeedItem[]; regionCounts: Record<string, number> };
 }) {
   useEffect(() => {
     void fetch(`/api/matches/${slug}/view`, { method: "POST" }).catch(() => {});
   }, [slug]);
 
   const voting = match.status === "active";
+  const showActivity = match.show_rating_history;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:items-start">
@@ -52,30 +49,21 @@ export function MatchExperience({
           <MatchDuel slug={slug} disabled={!voting} />
         </section>
 
-        {match.show_rating_history ? (
+        {showActivity ? (
           <section className="space-y-3">
-            <h2 className="text-sm font-medium text-white/80">Elo 历史</h2>
-            <EloHistoryChart history={ratingHistory} imageIds={images.map((i) => i.id)} />
+            <h2 className="text-sm font-medium text-white/80">投票动态</h2>
+            <RecentVotesFeed
+              key={slug}
+              slug={slug}
+              initialItems={activity.items}
+              initialRegionCounts={activity.regionCounts}
+            />
           </section>
-        ) : null}
-
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium text-white/80">最近投票来源（脱敏地区）</h2>
-          <div className="flex flex-wrap gap-2">
-            {recentRegions.length === 0 ? (
-              <span className="text-sm text-white/45">暂无数据</span>
-            ) : (
-              recentRegions.map((r, i) => (
-                <span
-                  key={`${r.voter_region}-${i}`}
-                  className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70"
-                >
-                  {r.voter_region ?? "未知"}
-                </span>
-              ))
-            )}
-          </div>
-        </section>
+        ) : (
+          <p className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/45">
+            创建者已关闭投票动态与地区汇总展示。
+          </p>
+        )}
       </div>
 
       <aside className="w-full shrink-0 space-y-4 lg:sticky lg:top-8 lg:w-80">
@@ -83,7 +71,7 @@ export function MatchExperience({
           <LiveLeaderboard key={`${match.id}-${slug}`} matchId={match.id} slug={slug} initial={rankings} />
         ) : (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55 backdrop-blur">
-            创建者已关闭实时排行榜展示。
+            创建者已关闭实时人气榜展示。
           </div>
         )}
       </aside>

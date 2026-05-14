@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Image Match — Elo 图片对战",
-  description: "匿名 1v1 投票与实时 Elo 排行榜",
+  title: "Image Match — 图片人气对战",
+  description: "匿名 1v1 投票与实时人气榜",
 };
 
 export default function RootLayout({

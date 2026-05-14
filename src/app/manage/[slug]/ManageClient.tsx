@@ -342,11 +342,7 @@ export function ManageClient({ slug }: { slug: string }) {
                         unoptimized
                       />
                     </div>
-                    <div className="space-y-1 p-2">
-                      <div className="flex justify-between text-[10px] text-white/50">
-                        <span>Elo {Math.round(img.elo_rating)}</span>
-                        <span>{img.battle_count} 战</span>
-                      </div>
+                    <div className="p-2">
                       <Button
                         type="button"
                         variant="danger"

@@ -47,28 +47,27 @@ export function LiveLeaderboard({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur">
-      <div className="border-b border-white/10 px-4 py-3 text-sm font-medium text-white/80">实时排行榜</div>
+      <div className="border-b border-white/10 px-4 py-3">
+        <div className="text-sm font-medium text-white/85">实时人气</div>
+        <p className="mt-0.5 text-[11px] text-white/45">按大家的选择实时更新顺序（数字越小越靠前）。</p>
+      </div>
       <ul className="divide-y divide-white/5">
         {sorted.map((r) => (
-          <li key={r.image.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
-            <span className="w-6 text-right text-cyan-300/90">{r.rank}</span>
-            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-white/10">
+          <li key={r.image.id} className="flex items-center gap-3 px-3 py-3 text-sm">
+            <span className="w-7 shrink-0 text-right text-lg font-semibold tabular-nums text-cyan-300/90">
+              {r.rank}
+            </span>
+            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-md">
               <Image
                 src={r.image.thumb_url || r.image.image_url}
                 alt=""
                 fill
                 className="object-cover"
-                sizes="40px"
+                sizes="48px"
                 unoptimized
               />
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-white/90">#{r.image.id.slice(0, 6)}</div>
-              <div className="text-xs text-white/45">
-                胜率 {(r.winRate * 100).toFixed(0)}% · 场次 {r.image.battle_count}
-              </div>
-            </div>
-            <div className="shrink-0 text-right font-mono text-cyan-200/90">{Math.round(r.image.elo_rating)}</div>
+            <div className="min-w-0 flex-1 text-xs text-white/40">更受欢迎</div>
           </li>
         ))}
       </ul>
