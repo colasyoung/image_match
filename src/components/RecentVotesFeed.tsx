@@ -43,73 +43,39 @@ export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Pro
   );
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3">
-        <p className="text-xs font-medium text-white/50">最近投票来自哪些地区（按票数汇总）</p>
+    <div className="space-y-4">
+      <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+        <p className="text-[10px] font-medium uppercase tracking-wide text-white/40">地区热度（按票）</p>
         {regionList.length === 0 ? (
-          <p className="mt-2 text-sm text-white/40">还没有人投票，或创建者关闭了投票动态展示。</p>
+          <p className="mt-1 text-xs text-white/38">暂无投票数据</p>
         ) : (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
             {regionList.map(([region, n]) => (
               <span
                 key={region}
-                className="inline-flex items-center gap-1 rounded-full border border-cyan-500/25 bg-cyan-950/40 px-2.5 py-1 text-xs text-cyan-100/90"
+                className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
               >
-                <span>{region}</span>
-                <span className="rounded-md bg-white/10 px-1.5 font-mono text-[10px] text-white/70">{n}</span>
+                <span className="max-w-[120px] truncate">{region}</span>
+                <span className="font-mono text-white/45">{n}</span>
               </span>
             ))}
           </div>
         )}
       </div>
 
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-white/80">最近大家在选什么</h3>
-        <p className="text-xs text-white/45">每条记录是一对图的一次结果：显示其他人点了哪一边（或跳过），以及该次操作的大致地区。</p>
+      <div>
+        <h3 className="text-sm font-medium text-white/85">最近大家在选什么</h3>
+        <p className="mt-0.5 text-[11px] text-white/42">每条是一条真实投票：谁、选了哪边、大约从哪来。</p>
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-xl border border-white/10 bg-white/5 py-10 text-center text-sm text-white/45">
-          暂无投票记录，来投第一票吧。
+        <div className="rounded-lg border border-dashed border-white/15 py-8 text-center text-xs text-white/40">
+          还没有记录，来投第一票吧。
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="flex max-h-[min(420px,55vh)] flex-col gap-1.5 overflow-y-auto pr-1">
           {items.map((row) => (
-            <li
-              key={row.id}
-              className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-inner backdrop-blur"
-            >
-              <div className="mb-3 flex items-center justify-between gap-2 text-[11px] text-white/45">
-                <span>{relTime(row.created_at)}</span>
-                <span className="truncate text-cyan-200/80" title={row.voter_region ?? ""}>
-                  {row.voter_region ?? "地区未知"}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
-                <Thumb src={row.left_thumb} highlight={!row.skipped && row.winner_image_id === row.left_image_id} />
-                <span className="text-lg font-light text-white/35">vs</span>
-                <Thumb src={row.right_thumb} highlight={!row.skipped && row.winner_image_id === row.right_image_id} />
-              </div>
-
-              <div className="mt-3 text-center text-sm">
-                {row.skipped ? (
-                  <span className="text-white/50">有人跳过了这一对</span>
-                ) : (
-                  <p className="text-white/75">
-                    大家选了
-                    <span className="mx-1 inline-flex align-middle">
-                      {row.winner_thumb ? (
-                        <span className="relative inline-block h-10 w-10 overflow-hidden rounded-lg border-2 border-emerald-400/70 shadow-lg shadow-emerald-900/40">
-                          <Image src={row.winner_thumb} alt="" fill className="object-cover" sizes="40px" unoptimized />
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="text-emerald-200/90">这一边</span>
-                  </p>
-                )}
-              </div>
-            </li>
+            <VoteStrip key={row.id} row={row} />
           ))}
         </ul>
       )}
@@ -117,18 +83,59 @@ export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Pro
   );
 }
 
-function Thumb({ src, highlight }: { src: string; highlight: boolean }) {
-  if (!src) {
-    return <div className="h-20 w-20 rounded-xl bg-white/10" />;
+function VoteStrip({ row }: { row: ActivityFeedItem }) {
+  const region = row.voter_region ?? "未知地区";
+  const t = relTime(row.created_at);
+
+  if (row.skipped) {
+    return (
+      <li className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-1.5 pl-2.5 text-[11px] text-white/55">
+        <Mini src={row.left_thumb} />
+        <span className="text-white/30">vs</span>
+        <Mini src={row.right_thumb} />
+        <span className="min-w-0 flex-1 truncate">
+          <span className="text-white/65">来自 {region}</span> 的用户跳过了这一对
+        </span>
+        <time className="shrink-0 tabular-nums text-white/35">{t}</time>
+      </li>
+    );
   }
+
+  const pickedLeft = row.winner_image_id === row.left_image_id;
+  const winnerSrc = pickedLeft ? row.left_thumb : row.right_thumb;
+
+  return (
+    <li className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-1.5 pl-2.5">
+      <Mini src={row.left_thumb} ring={pickedLeft} />
+      <span className="shrink-0 text-[10px] text-white/28">vs</span>
+      <Mini src={row.right_thumb} ring={!pickedLeft} />
+      <div className="min-w-0 flex-1 text-[11px] leading-snug">
+        <span className="text-white/60">来自 {region}</span>
+        <span className="text-white/45"> 的用户选了</span>
+        <span className="ml-1 inline-flex translate-y-0.5 align-middle">
+          {winnerSrc ? (
+            <span className="relative inline-block h-7 w-7 overflow-hidden rounded-md border border-emerald-500/40 shadow-sm shadow-emerald-900/30">
+              <Image src={winnerSrc} alt="" fill className="object-cover" sizes="28px" unoptimized />
+            </span>
+          ) : null}
+        </span>
+        <span className="text-emerald-200/85"> 这一边</span>
+      </div>
+      <time className="shrink-0 tabular-nums text-[10px] text-white/35">{t}</time>
+    </li>
+  );
+}
+
+function Mini({ src, ring }: { src: string; ring?: boolean }) {
+  if (!src) return <div className="h-8 w-8 shrink-0 rounded-md bg-white/10" />;
   return (
     <div
       className={cn(
-        "relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-black/30 sm:h-24 sm:w-24",
-        highlight ? "border-emerald-400/80 ring-2 ring-emerald-400/30" : "border-white/15"
+        "relative h-8 w-8 shrink-0 overflow-hidden rounded-md border bg-black/30",
+        ring ? "border-emerald-400/70 ring-1 ring-emerald-400/25" : "border-white/12"
       )}
     >
-      <Image src={src} alt="" fill className="object-cover" sizes="96px" unoptimized />
+      <Image src={src} alt="" fill className="object-cover" sizes="32px" unoptimized />
     </div>
   );
 }

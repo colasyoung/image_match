@@ -49,27 +49,40 @@ export function LiveLeaderboard({
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur">
       <div className="border-b border-white/10 px-4 py-3">
         <div className="text-sm font-medium text-white/85">实时人气</div>
-        <p className="mt-0.5 text-[11px] text-white/45">按大家的选择实时更新顺序（数字越小越靠前）。</p>
+        <p className="mt-0.5 text-[11px] text-white/45">按大家的选择排序；数据随投票更新。</p>
       </div>
       <ul className="divide-y divide-white/5">
-        {sorted.map((r) => (
-          <li key={r.image.id} className="flex items-center gap-3 px-3 py-3 text-sm">
-            <span className="w-7 shrink-0 text-right text-lg font-semibold tabular-nums text-cyan-300/90">
-              {r.rank}
-            </span>
-            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-md">
-              <Image
-                src={r.image.thumb_url || r.image.image_url}
-                alt=""
-                fill
-                className="object-cover"
-                sizes="48px"
-                unoptimized
-              />
-            </div>
-            <div className="min-w-0 flex-1 text-xs text-white/40">更受欢迎</div>
-          </li>
-        ))}
+        {sorted.map((r) => {
+          const pct = r.image.battle_count > 0 ? Math.round(r.winRate * 100) : 0;
+          return (
+            <li key={r.image.id} className="flex items-center gap-2.5 px-3 py-2.5 text-sm">
+              <span className="w-6 shrink-0 text-right text-base font-semibold tabular-nums text-cyan-300/90">
+                {r.rank}
+              </span>
+              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-white/10 shadow-sm">
+                <Image
+                  src={r.image.thumb_url || r.image.image_url}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="44px"
+                  unoptimized
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] text-white/72">
+                  胜率 <span className="font-medium text-white/90">{pct}%</span>
+                  <span className="mx-1 text-white/25">·</span>
+                  <span className="text-white/55">{r.image.battle_count} 场对决</span>
+                  <span className="mx-1 text-white/25">·</span>
+                  <span className="text-white/55">{r.image.win_count} 胜</span>
+                  <span className="text-white/35"> / </span>
+                  <span className="text-white/55">{r.image.loss_count} 负</span>
+                </div>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

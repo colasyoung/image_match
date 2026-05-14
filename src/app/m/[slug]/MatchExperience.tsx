@@ -45,13 +45,16 @@ export function MatchExperience({
         </header>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-white/80">1v1 对战</h2>
+          <div>
+            <h2 className="text-sm font-medium text-white/85">选你更喜欢的一张</h2>
+            <p className="mt-0.5 text-[11px] text-white/45">两张图随机碰面，帮大家筛出更受欢迎的作品。</p>
+          </div>
           <MatchDuel slug={slug} disabled={!voting} />
         </section>
 
         {showActivity ? (
           <section className="space-y-3">
-            <h2 className="text-sm font-medium text-white/80">投票动态</h2>
+            <h2 className="text-sm font-medium text-white/85">投票动态</h2>
             <RecentVotesFeed
               key={slug}
               slug={slug}
