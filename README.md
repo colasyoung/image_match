@@ -72,6 +72,17 @@ npm run dev
 
 仓库内附带 **OpenNext + Cloudflare** 相关文件；若你在该路线或类似边缘平台上构建，请按对应官方文档设置构建命令与变量。构建或运行报错时，以该平台日志与 `npm run build` 本地输出为准。
 
+### Vercel：`Deploying outputs...` 很久或像卡住
+
+构建已成功（有 `Build Completed`）但长时间停在 **Deploying outputs** 时，多为**上传部署产物慢**或**平台侧排队**（与 [社区里类似反馈](https://community.vercel.com/t/vercel-issue-builds-successfully-but-hang-at-deploying-outputs/14718) 相近）。可依次尝试：
+
+1. **再等 5～15 分钟**（大依赖首次上传会慢），并在 Vercel 控制台看该次 Deployment 是否最终变绿。  
+2. **取消后重新 Deploy**；或在项目设置里 **Clear Build Cache** 后再部署。  
+3. 若仍异常：到 [Vercel Status](https://www.vercel-status.com/) 看是否区域性故障；或换 **Deployment Region** 试一次。  
+4. 本仓库已将 **NSFW 检测**改为仅在真正上传图床时 **动态 `import()`**，避免把 TensorFlow 打进每个 API/页面包，以**缩小上传体积**；若需进一步减负，可在环境变量中设 **`DISABLE_NSFW_SCREENING=1`** 临时关闭检测（仅可信环境）。
+
+若本地 `tsc` 报 `Cannot find type definition file for 'node 2'`，多为 `node_modules/@types/` 下误出现 **`node 2` 重复目录**，删掉该目录后执行 `npm install` 即可。
+
 ## 地区标签、隐私与内容责任（部署方必读）
 
 本应用**不**声称在任意法域均已满足全部监管要求；面向公众上线前请自行完成合规审查（必要时咨询法律顾问）。

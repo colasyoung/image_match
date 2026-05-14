@@ -2,7 +2,6 @@ import { randomBytes } from "crypto";
 import { customAlphabet } from "nanoid";
 import { downloadImageForUpload } from "@/lib/fetch-remote-image";
 import { IMGBB_UPLOAD_MAX_BYTES, resolveImgbbExpirationSeconds } from "@/lib/imgbb";
-import { assertImagePassesNsfwScreen } from "@/lib/nsfw-screen";
 import { DEFAULT_MAX_IMAGES_PER_MATCH } from "@/lib/match-limits";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashIp } from "@/lib/ip";
@@ -153,6 +152,7 @@ export async function uploadImageToImgbb(base64: string, filename?: string) {
   const key = process.env.IMGBB_API_KEY;
   if (!key) throw new Error("Missing IMGBB_API_KEY");
   const buf = Buffer.from(base64, "base64");
+  const { assertImagePassesNsfwScreen } = await import("@/lib/nsfw-screen");
   await assertImagePassesNsfwScreen(buf);
   const expiration = resolveImgbbExpirationSeconds();
   const params = new URLSearchParams();
