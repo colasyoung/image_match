@@ -231,8 +231,9 @@ function MatchDuelPairSurface({
     setPickedSide(null);
     setVoteInFlight(true);
     setErr(null);
+    let res: Response;
     try {
-      await fetchWithTimeout(
+      res = await fetchWithTimeout(
         "/api/vote",
         {
           method: "POST",
@@ -243,6 +244,14 @@ function MatchDuelPairSurface({
       );
     } catch (e) {
       if (isAbortError(e)) setErr(t("duel.requestTimeout"));
+      setVoteInFlight(false);
+      return;
+    }
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setErr(j.error ? friendlyApiError(String(j.error), t) : t("duel.voteFail"));
+      setVoteInFlight(false);
+      return;
     }
     await load();
     setVoteInFlight(false);

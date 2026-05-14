@@ -133,6 +133,7 @@ export const MESSAGES: Record<
       NeedAtLeast2: "请先至少上传 2 张图片，再开启比赛。",
       CannotActivate: "当前状态无法开启，请刷新页面后重试。",
       Max10: "每场比赛最多 10 张图片。",
+      RateLimited: "本场今日操作次数已达上限（每 24 小时约 200 次），请稍后再试。",
       CreateFail: "创建失败",
       UploadFail: "上传失败",
     },
@@ -472,6 +473,8 @@ export const MESSAGES: Record<
       NeedAtLeast2: "Upload at least 2 images before starting the match.",
       CannotActivate: "Can’t activate from this state—refresh and try again.",
       Max10: "This match allows at most 10 images.",
+      RateLimited:
+        "You’ve reached today’s limit for this match (about 200 actions per 24 hours). Try again later.",
       CreateFail: "Create failed",
       UploadFail: "Upload failed",
     },

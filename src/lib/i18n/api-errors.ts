@@ -6,6 +6,7 @@ const API_ERROR_PATH: Record<string, string> = {
   "Need at least 2 images": "api.NeedAtLeast2",
   "Cannot activate from current state": "api.CannotActivate",
   "Max 10 images": "api.Max10",
+  "Rate limited": "api.RateLimited",
 };
 
 export function friendlyApiError(raw: string, t: (path: string) => string): string {

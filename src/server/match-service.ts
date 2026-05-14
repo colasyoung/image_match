@@ -40,8 +40,9 @@ export type ImageRow = {
   loss_count: number;
 };
 
-const VOTE_RATE_WINDOW_MS = 60_000;
-const VOTE_RATE_MAX = 20;
+/** 滚动 24h 内，同一场、同一投票者标识（当前为 IP 哈希）最多完成多少次「对决」操作（含投票与跳过）。 */
+const MATCH_DUEL_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MATCH_DUEL_DAILY_MAX = 200;
 
 async function generateUniqueSlug(): Promise<string> {
   const admin = createAdminClient();
@@ -459,18 +460,17 @@ export async function getNextPair(slug: string): Promise<{
   return { left, right, pool: imgs };
 }
 
-export async function assertVoteRateOk(matchId: string, voterHash: string) {
+export async function assertMatchDuelDailyLimit(matchId: string, voterHash: string) {
   const admin = createAdminClient();
-  const since = new Date(Date.now() - VOTE_RATE_WINDOW_MS).toISOString();
+  const since = new Date(Date.now() - MATCH_DUEL_DAILY_WINDOW_MS).toISOString();
   const { count, error } = await admin
     .from("battles")
     .select("*", { count: "exact", head: true })
     .eq("match_id", matchId)
     .eq("voter_ip_hash", voterHash)
-    .eq("skipped", false)
     .gte("created_at", since);
   if (error) throw new Error(error.message);
-  if ((count ?? 0) >= VOTE_RATE_MAX) throw new Error("Rate limited");
+  if ((count ?? 0) >= MATCH_DUEL_DAILY_MAX) throw new Error("Rate limited");
 }
 
 export async function submitVote(input: {
@@ -490,7 +490,7 @@ export async function submitVote(input: {
   if (!ids.has(input.winnerId) || !ids.has(input.loserId)) throw new Error("Invalid images");
   if (input.winnerId === input.loserId) throw new Error("Invalid pair");
 
-  await assertVoteRateOk(bundle.match.id, input.voterHash);
+  await assertMatchDuelDailyLimit(bundle.match.id, input.voterHash);
 
   const { data, error } = await admin.rpc("apply_match_vote", {
     p_match_id: bundle.match.id,
@@ -517,6 +517,7 @@ export async function submitSkip(input: {
   const bundle = await getMatchForPublic(input.slug);
   if (!bundle) throw new Error("Match not found");
   if (bundle.match.status !== "active") throw new Error("Match not active");
+  await assertMatchDuelDailyLimit(bundle.match.id, input.voterHash);
   const { error } = await admin.from("battles").insert({
     match_id: bundle.match.id,
     left_image_id: input.leftId,
