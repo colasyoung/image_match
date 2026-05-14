@@ -66,7 +66,9 @@ npm run dev
 
 ## 公网运行
 
-本应用含 **API Routes**，需要支持 **Node.js** 的 Next.js 运行时（常见 PaaS 均可）。`package.json` 的 **`engines.node`** 为 **`22.x`**（锁定 **Node 22** 主版本线，满足 **wrangler** 4.9x 的 `>=22`，并减少 Vercel 对「`>=` 跨大版本」的提示）。**推荐本地与 CI 使用 Node 22**（与 Vercel 默认一致）；若本机为 Node 24，npm 可能对根包提示 `EBADENGINE`，默认仍会继续安装。在托管控制台配置与 `.env.example` **同名同含义**的环境变量即可。
+本应用含 **API Routes**，需要支持 **Node.js** 的 Next.js 运行时（常见 PaaS 均可）。`package.json` 的 **`engines.node`** 为 **`24.x`**（与 **wrangler** 4.9x 的 `>=22` 兼容；并与 Vercel **Project Settings → Node.js Version** 设为 **24.x** 时一致，避免出现「仓库 engines 覆盖控制台版本」的黄色提示）。若你改用 **22.x**，请同时把 Vercel 控制台与 `engines` 改成同一主版本。在托管控制台配置与 `.env.example` **同名同含义**的环境变量即可。
+
+可选：在 Vercel / CI 环境变量中加入 **`NEXT_TELEMETRY_DISABLED=1`**，可减少 Next.js 构建日志里的遥测说明（与构建成败无关）。
 
 仓库内附带 **OpenNext + Cloudflare** 相关文件；若你在该路线或类似边缘平台上构建，请按对应官方文档设置构建命令与变量。构建或运行报错时，以该平台日志与 `npm run build` 本地输出为准。
 
