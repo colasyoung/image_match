@@ -1,8 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import { ProgressiveRemoteImage } from "@/components/ProgressiveRemoteImage";
 import { useLocale } from "@/contexts/LocaleProvider";
+import { useCoverObjectPosition } from "@/hooks/useCoverObjectPosition";
 import { HOME_MAX_CREATOR_REGIONS, HOME_MAX_MATCHES_PER_REGION } from "@/lib/home-creator-regions";
 import { formatRegionHeatLabel } from "@/lib/region-display";
 import type { listMatchesHome } from "@/server/match-service";
@@ -130,6 +131,45 @@ export function HomeView({
   );
 }
 
+/** 封面 URL 或比赛变化时通过 `key` 重置智能裁切状态，避免沿用上一条 `object-position`。 */
+function HomeListingCoverImage({
+  matchId,
+  thumbUrlRaw,
+  listingCoverFull,
+  compact,
+  highlight,
+}: {
+  matchId: string;
+  thumbUrlRaw: string;
+  listingCoverFull: string | null;
+  compact: boolean;
+  highlight: boolean;
+}) {
+  const focalSrc = publicImageSrc(thumbUrlRaw);
+  const smartObjectPosition = useCoverObjectPosition(focalSrc, {
+    rush: Boolean(highlight && !compact),
+  });
+
+  return (
+    <ProgressiveRemoteImage
+      thumbUrlRaw={thumbUrlRaw}
+      fullUrlRaw={listingCoverFull}
+      resetKey={matchId}
+      objectPosition={smartObjectPosition}
+      sizes={
+        compact ? "64px" : "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, min(420px, 34vw)"
+      }
+      priority={Boolean(highlight && !compact)}
+      fetchPriority={highlight && !compact ? "high" : "auto"}
+      loading={highlight && !compact ? "eager" : "lazy"}
+      imageClassName={cn(
+        "opacity-90 transition-opacity duration-300 group-hover:opacity-100 ease-out [transition-property:object-position,opacity] [transition-duration:500ms,300ms]",
+        !smartObjectPosition && (compact ? "object-[50%_22%]" : "object-[50%_18%]")
+      )}
+    />
+  );
+}
+
 function MatchCard({
   row,
   highlight,
@@ -140,8 +180,9 @@ function MatchCard({
   compact?: boolean;
 }) {
   const { t } = useLocale();
-  const { match, votes24h, activeVoters, hotScore, listingCover } = row;
-  const cover = listingCover ?? match.cover_image;
+  const { match, votes24h, activeVoters, hotScore, listingCover, listingCoverFull } = row;
+  const thumbUrlRaw = (listingCover ?? match.cover_image ?? "").trim();
+  const coverKey = `${match.id}|${publicImageSrc(thumbUrlRaw)}`;
   return (
     <Link
       href={`/m/${match.slug}`}
@@ -156,24 +197,14 @@ function MatchCard({
           compact ? "h-14 w-14 rounded-xl" : "aspect-[16/9] w-full"
         )}
       >
-        {cover ? (
-          <Image
-            src={publicImageSrc(cover)}
-            alt=""
-            fill
-            quality={82}
-            className={cn(
-              "object-cover opacity-90 transition group-hover:opacity-100",
-              /* 裁切锚点略偏上，多数人像/主体会偏中上，减少「只剩胸口或背景」 */
-              compact ? "object-[50%_22%]" : "object-[50%_18%]"
-            )}
-            sizes={
-              compact
-                ? "64px"
-                : "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, min(420px, 34vw)"
-            }
-            priority={Boolean(highlight && !compact)}
-            loading={highlight && !compact ? "eager" : "lazy"}
+        {thumbUrlRaw ? (
+          <HomeListingCoverImage
+            key={coverKey}
+            matchId={match.id}
+            thumbUrlRaw={thumbUrlRaw}
+            listingCoverFull={listingCoverFull}
+            compact={Boolean(compact)}
+            highlight={Boolean(highlight)}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-white/35">{t("home.noCover")}</div>

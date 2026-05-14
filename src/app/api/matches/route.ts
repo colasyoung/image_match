@@ -46,6 +46,7 @@ function stripMatch(row: {
   hotScore: number;
   hotScoreAlt: number;
   listingCover: string | null;
+  listingCoverFull: string | null;
 }) {
   const match = { ...row.match };
   delete match.manage_token;
@@ -56,5 +57,6 @@ function stripMatch(row: {
     hotScore: row.hotScore,
     hotScoreAlt: row.hotScoreAlt,
     listingCover: row.listingCover,
+    listingCoverFull: row.listingCoverFull,
   };
 }

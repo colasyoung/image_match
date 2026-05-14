@@ -81,6 +81,11 @@ export const MESSAGES: Record<
       tapToVote: "点这张投票",
       tapReady: "轻触即投",
       tapWait: "请等待两侧图片加载完成",
+      submittingPick: "正在提交你的选择…",
+      pickedRibbon: "你的选择",
+      otherRibbon: "另一张",
+      footerWinner: "已投给这张",
+      footerLoser: "本轮未选",
     },
     feed: {
       regionHeat: "地区热度（按票）",
@@ -415,6 +420,11 @@ export const MESSAGES: Record<
       tapToVote: "Tap to vote",
       tapReady: "Tap to vote",
       tapWait: "Wait for both images to finish loading",
+      submittingPick: "Submitting your pick…",
+      pickedRibbon: "Your pick",
+      otherRibbon: "The other one",
+      footerWinner: "You voted for this one",
+      footerLoser: "Not this round",
     },
     feed: {
       regionHeat: "Regions (by votes)",

@@ -11,6 +11,7 @@ export async function GET(_req: Request, ctx: Params) {
     return NextResponse.json({
       left: pair.left,
       right: pair.right,
+      pool: pair.pool,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed";

@@ -395,6 +395,8 @@ function orderedPair(a: string, b: string): [string, string] {
 export async function getNextPair(slug: string): Promise<{
   left: ImageRow;
   right: ImageRow;
+  /** 本场全部图片，供投票页预加载尚未出场的图 */
+  pool: ImageRow[];
 } | null> {
   const admin = createAdminClient();
   const bundle = await getMatchForPublic(slug);
@@ -454,7 +456,7 @@ export async function getNextPair(slug: string): Promise<{
   const leftFirst = Math.random() < 0.5;
   const left = imgs.find((i) => i.id === (leftFirst ? low : high))!;
   const right = imgs.find((i) => i.id === (leftFirst ? high : low))!;
-  return { left, right };
+  return { left, right, pool: imgs };
 }
 
 export async function assertVoteRateOk(matchId: string, voterHash: string) {
@@ -556,8 +558,10 @@ export async function listMatchesHome(): Promise<
     activeVoters: number;
     hotScore: number;
     hotScoreAlt: number;
-    /** 当前 Elo 最高的图片 URL（用于首页封面）；无图时为 null */
+    /** 当前 Elo 最高图：先缩略后主图 URL（与 `listingCoverFull` 成对用于渐进加载） */
     listingCover: string | null;
+    /** 与 `listingCover` 不同时存在则首页可先缩略再拉主图；无缩略图时为 null */
+    listingCoverFull: string | null;
   }[]
 > {
   const admin = createAdminClient();
@@ -604,15 +608,18 @@ export async function listMatchesHome(): Promise<
     .select("match_id, elo_rating, thumb_url, image_url")
     .in("match_id", ids);
 
-  const topImageByMatch = new Map<string, { elo: number; url: string }>();
+  const topImageByMatch = new Map<string, { elo: number; coverUrl: string; coverFullUrl: string | null }>();
   for (const img of homeImages ?? []) {
     const elo = Number(img.elo_rating ?? 0);
-    const url = (img.thumb_url || img.image_url || "").trim();
-    if (!url) continue;
+    const thumb = (img.thumb_url ?? "").trim();
+    const full = (img.image_url ?? "").trim();
+    const coverUrl = thumb || full;
+    if (!coverUrl) continue;
+    const coverFullUrl = thumb && full && thumb !== full ? full : null;
     const mid = img.match_id as string;
     const prev = topImageByMatch.get(mid);
     if (!prev || elo > prev.elo) {
-      topImageByMatch.set(mid, { elo, url });
+      topImageByMatch.set(mid, { elo, coverUrl, coverFullUrl });
     }
   }
 
@@ -622,8 +629,18 @@ export async function listMatchesHome(): Promise<
     const views = m.view_count ?? 0;
     const hotScore = v24 * 0.5 + online * 0.3 + views * 0.2;
     const hotScoreAlt = v24 * 0.7 + online * 0.3;
-    const listingCover = topImageByMatch.get(m.id)?.url ?? null;
-    return { match: m as MatchRow, votes24h: v24, activeVoters: online, hotScore, hotScoreAlt, listingCover };
+    const top = topImageByMatch.get(m.id);
+    const listingCover = top?.coverUrl ?? null;
+    const listingCoverFull = top?.coverFullUrl ?? null;
+    return {
+      match: m as MatchRow,
+      votes24h: v24,
+      activeVoters: online,
+      hotScore,
+      hotScoreAlt,
+      listingCover,
+      listingCoverFull,
+    };
   });
 }
 

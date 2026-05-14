@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useLocale } from "@/contexts/LocaleProvider";
 import { friendlyApiError } from "@/lib/i18n/api-errors";
@@ -12,10 +11,8 @@ import {
   isAbortError,
 } from "@/lib/fetch-with-timeout";
 import type { ImageRow } from "@/server/match-service";
-import { duelFullSrc, duelThumbOnlySrc, voteCardImageSrc } from "@/lib/public-image-src";
-import type { ImageNetworkTier } from "@/lib/image-network-tier";
-import { fullImageUpgradeDelayMs } from "@/lib/image-network-tier";
-import { useNetworkImageTier } from "@/hooks/useNetworkImageTier";
+import { MatchDuelImagePreload } from "@/components/MatchDuelImagePreload";
+import { ProgressiveRemoteImage } from "@/components/ProgressiveRemoteImage";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -23,14 +20,18 @@ type Props = { slug: string; disabled?: boolean };
 
 export function MatchDuel({ slug, disabled }: Props) {
   const { t } = useLocale();
-  const networkTier = useNetworkImageTier();
   const [left, setLeft] = useState<ImageRow | null>(null);
   const [right, setRight] = useState<ImageRow | null>(null);
-  const [busy, setBusy] = useState(false);
+  /** 从点选到下一对加载完成（含提交票与拉新 pair） */
+  const [voteInFlight, setVoteInFlight] = useState(false);
+  /** 用户刚投的那一侧；与 voteInFlight 同时为真时用于胜者/败者差异化 UI */
+  const [pickedSide, setPickedSide] = useState<"left" | "right" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [leftImgReady, setLeftImgReady] = useState(false);
   const [rightImgReady, setRightImgReady] = useState(false);
   const [imgLoadFailed, setImgLoadFailed] = useState(false);
+  /** 本场全部图片，用于后台预加载尚未出场的对局图 */
+  const [preloadPool, setPreloadPool] = useState<ImageRow[]>([]);
   const loadGenRef = useRef(0);
   const loadRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -51,6 +52,8 @@ export function MatchDuel({ slug, disabled }: Props) {
       }
       if (gen !== loadGenRef.current) return;
       setErr(t("duel.loadFail"));
+      setPickedSide(null);
+      setPreloadPool([]);
       setLeft(null);
       setRight(null);
       return;
@@ -59,14 +62,17 @@ export function MatchDuel({ slug, disabled }: Props) {
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       setErr(j.error ? friendlyApiError(String(j.error), t) : t("duel.loadFail"));
+      setPickedSide(null);
+      setPreloadPool([]);
       setLeft(null);
       setRight(null);
       return;
     }
-    const j = await res.json();
+    const j = (await res.json()) as { left: ImageRow; right: ImageRow; pool?: ImageRow[] };
     if (gen !== loadGenRef.current) return;
     setLeft(j.left);
     setRight(j.right);
+    setPreloadPool(Array.isArray(j.pool) && j.pool.length >= 2 ? j.pool : [j.left, j.right]);
   }, [slug, t]);
 
   useEffect(() => {
@@ -101,9 +107,16 @@ export function MatchDuel({ slug, disabled }: Props) {
     return () => window.clearTimeout(id);
   }, [disabled, left, right, leftImgReady, rightImgReady, load]);
 
+  const preloadKey = useMemo(() => {
+    if (disabled || preloadPool.length < 2) return "";
+    return [...preloadPool].map((i) => i.id).sort().join("|");
+  }, [disabled, preloadPool]);
+
   const vote = async (winner: ImageRow, loser: ImageRow) => {
-    if (!left || !right || busy || !leftImgReady || !rightImgReady || imgLoadFailed) return;
-    setBusy(true);
+    if (!left || !right || voteInFlight || !leftImgReady || !rightImgReady || imgLoadFailed) return;
+    const side: "left" | "right" = winner.id === left.id ? "left" : "right";
+    setPickedSide(side);
+    setVoteInFlight(true);
     setErr(null);
     let res: Response;
     try {
@@ -123,7 +136,8 @@ export function MatchDuel({ slug, disabled }: Props) {
         FETCH_LOAD_TIMEOUT_MS
       );
     } catch (e) {
-      setBusy(false);
+      setVoteInFlight(false);
+      setPickedSide(null);
       if (isAbortError(e)) {
         setErr(t("duel.requestTimeout"));
         void load();
@@ -132,18 +146,22 @@ export function MatchDuel({ slug, disabled }: Props) {
       setErr(t("duel.voteFail"));
       return;
     }
-    setBusy(false);
     if (!res.ok) {
+      setVoteInFlight(false);
+      setPickedSide(null);
       const j = await res.json().catch(() => ({}));
       setErr(j.error ? friendlyApiError(String(j.error), t) : t("duel.voteFail"));
       return;
     }
     await load();
+    setPickedSide(null);
+    setVoteInFlight(false);
   };
 
   const skip = async () => {
-    if (!left || !right || busy || !leftImgReady || !rightImgReady || imgLoadFailed) return;
-    setBusy(true);
+    if (!left || !right || voteInFlight || !leftImgReady || !rightImgReady || imgLoadFailed) return;
+    setPickedSide(null);
+    setVoteInFlight(true);
     setErr(null);
     try {
       await fetchWithTimeout(
@@ -157,10 +175,9 @@ export function MatchDuel({ slug, disabled }: Props) {
       );
     } catch (e) {
       if (isAbortError(e)) setErr(t("duel.requestTimeout"));
-    } finally {
-      setBusy(false);
     }
     await load();
+    setVoteInFlight(false);
   };
 
   if (disabled) {
@@ -186,16 +203,30 @@ export function MatchDuel({ slug, disabled }: Props) {
 
   const imagesInteractive = leftImgReady && rightImgReady && !imgLoadFailed;
   const revealPair = imagesInteractive;
-  const gateBusy = busy || !imagesInteractive;
+  const gateBusy = voteInFlight || !imagesInteractive;
+  const pickFeedback = Boolean(voteInFlight && pickedSide);
+  const leftResult: "none" | "winner" | "loser" = pickFeedback
+    ? pickedSide === "left"
+      ? "winner"
+      : "loser"
+    : "none";
+  const rightResult: "none" | "winner" | "loser" = pickFeedback
+    ? pickedSide === "right"
+      ? "winner"
+      : "loser"
+    : "none";
 
   return (
-    <div className="space-y-4">
+    <div className="relative space-y-4">
+      {preloadKey ? <MatchDuelImagePreload key={preloadKey} pool={preloadPool} /> : null}
       <p className="text-center text-xs leading-relaxed text-white/50 md:text-sm">
         {imgLoadFailed ? (
           <>
             <strong className="text-amber-200/90">{t("duel.voteHintFailed")}</strong>
             {t("duel.voteHintFailedSub")}
           </>
+        ) : pickFeedback ? (
+          <span className="text-emerald-200/90">{t("duel.submittingPick")}</span>
         ) : imagesInteractive ? (
           <>
             {t("duel.voteHintReady")}
@@ -222,10 +253,10 @@ export function MatchDuel({ slug, disabled }: Props) {
           key={left.id}
           image={left}
           side={t("duel.left")}
-          busy={gateBusy}
+          interactionLocked={gateBusy}
+          resultRole={leftResult}
           revealPair={revealPair}
           loadOrder={0}
-          networkTier={networkTier}
           onPick={() => void vote(left, right)}
           onImageReady={() => setLeftImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -234,10 +265,10 @@ export function MatchDuel({ slug, disabled }: Props) {
           key={right.id}
           image={right}
           side={t("duel.right")}
-          busy={gateBusy}
+          interactionLocked={gateBusy}
+          resultRole={rightResult}
           revealPair={revealPair}
           loadOrder={1}
-          networkTier={networkTier}
           onPick={() => void vote(right, left)}
           onImageReady={() => setRightImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -261,72 +292,76 @@ function DuelCard({
   image,
   side,
   onPick,
-  busy,
+  interactionLocked,
+  resultRole,
   revealPair,
   loadOrder,
-  networkTier,
   onImageReady,
   onImageError,
 }: {
   image: ImageRow;
   side: string;
   onPick: () => void;
-  busy: boolean;
-  /** 左右图都已解码完成：此时才同时露出画面，此前两侧均保持加载态 */
+  interactionLocked: boolean;
+  resultRole: "none" | "winner" | "loser";
   revealPair: boolean;
-  /** 0=先抢首包（左图），1=后载（右图），减轻手机端双连接并发与解码压力 */
   loadOrder: 0 | 1;
-  networkTier: ImageNetworkTier;
   onImageReady: () => void;
   onImageError: () => void;
 }) {
   const { t } = useLocale();
   const primary = loadOrder === 0;
-  const thumbOnly = duelThumbOnlySrc(image);
-  const fullOnly = duelFullSrc(image);
-  const progressive = Boolean(thumbOnly && fullOnly && thumbOnly !== fullOnly);
-  const singleSrc = voteCardImageSrc(image);
-
-  const [showFull, setShowFull] = useState(false);
-  const [fullLoaded, setFullLoaded] = useState(false);
-  const [thumbDecoded, setThumbDecoded] = useState(false);
-
-  const onThumbLoadingComplete = useCallback(() => {
-    setThumbDecoded(true);
-    onImageReady();
-  }, [onImageReady]);
-
-  useEffect(() => {
-    if (!progressive || !thumbDecoded) return;
-    const delay = fullImageUpgradeDelayMs(networkTier);
-    if (delay === 0) {
-      queueMicrotask(() => setShowFull(true));
-      return;
-    }
-    const id = window.setTimeout(() => setShowFull(true), delay);
-    return () => clearTimeout(id);
-  }, [progressive, thumbDecoded, networkTier, image.id]);
+  const thumbRaw = (image.thumb_url ?? "").trim();
+  const fullRaw = (image.image_url ?? "").trim();
+  const thumbLayerRaw = thumbRaw || fullRaw;
+  const fullLayerRaw = thumbRaw && fullRaw && thumbRaw !== fullRaw ? fullRaw : null;
 
   const sizes = "(max-width: 768px) min(48vw, 420px), min(50vw, 520px)";
+
+  const showPick = resultRole !== "none";
+  const symmetricDim = interactionLocked && !showPick;
 
   return (
     <motion.button
       type="button"
-      disabled={busy}
+      disabled={interactionLocked}
       onClick={onPick}
-      whileTap={busy ? undefined : { scale: 0.985 }}
+      whileTap={interactionLocked ? undefined : { scale: 0.985 }}
       className={cn(
-        "group relative flex min-w-0 w-full flex-col overflow-hidden rounded-2xl border-2 border-white/10 bg-white/[0.06] text-left shadow-lg shadow-black/30 backdrop-blur transition",
+        "group relative flex min-w-0 w-full flex-col overflow-hidden rounded-2xl border-2 text-left shadow-lg backdrop-blur transition-[transform,opacity,filter,border-color,box-shadow,background-color] duration-300 ease-out",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/50",
-        busy
-          ? "cursor-default opacity-55"
-          : "hover:border-cyan-400/55 hover:shadow-cyan-900/20 cursor-pointer",
-        busy && "pointer-events-none"
+        !showPick && "border-white/10 bg-white/[0.06] shadow-black/30",
+        symmetricDim && "pointer-events-none cursor-default border-white/10 bg-white/[0.05] opacity-[0.52] shadow-black/25",
+        showPick &&
+          resultRole === "winner" &&
+          "pointer-events-none z-[2] scale-[1.015] cursor-default border-emerald-400/80 bg-emerald-950/25 shadow-emerald-950/40 ring-2 ring-emerald-400/40",
+        showPick &&
+          resultRole === "loser" &&
+          "pointer-events-none z-0 scale-[0.985] cursor-default border-white/[0.07] bg-black/45 opacity-[0.44] shadow-black/50 grayscale",
+        !interactionLocked &&
+          "cursor-pointer hover:border-cyan-400/55 hover:bg-white/[0.08] hover:shadow-cyan-900/25"
       )}
     >
-      <div className="absolute left-2.5 top-2.5 z-10 rounded-md bg-black/55 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/85 backdrop-blur">
+      <div
+        className={cn(
+          "absolute left-2.5 top-2.5 z-10 rounded-md bg-black/55 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/85 backdrop-blur",
+          showPick && resultRole === "loser" && "opacity-45"
+        )}
+      >
         {side}
       </div>
+      {showPick && resultRole === "winner" ? (
+        <div className="absolute right-2 top-2.5 z-[11] flex items-center gap-1 rounded-full bg-emerald-400 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-950 shadow-md shadow-emerald-900/30">
+          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-950 text-[9px] text-emerald-300">
+            ✓
+          </span>
+          {t("duel.pickedRibbon")}
+        </div>
+      ) : showPick && resultRole === "loser" ? (
+        <div className="absolute right-2 top-2.5 z-[11] rounded-md border border-white/10 bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/45 backdrop-blur">
+          {t("duel.otherRibbon")}
+        </div>
+      ) : null}
       <div className="relative aspect-[4/5] max-md:aspect-[3/4] w-full bg-black/35">
         {!revealPair ? (
           <div className="absolute inset-0 z-[1] flex items-center justify-center bg-black/40">
@@ -334,84 +369,70 @@ function DuelCard({
           </div>
         ) : null}
 
-        {progressive ? (
-          <>
-            <Image
-              src={thumbOnly}
-              alt=""
-              fill
-              priority={primary}
-              fetchPriority={primary ? "high" : "low"}
-              quality={52}
-              className={cn(
-                "object-cover transition duration-300",
-                revealPair && !busy && "group-hover:scale-[1.02]",
-                !revealPair && "opacity-0",
-                progressive && showFull && !fullLoaded && "max-md:blur-[2px]"
-              )}
-              sizes={sizes}
-              onLoadingComplete={onThumbLoadingComplete}
-              onError={onImageError}
-            />
-            {showFull ? (
-              <Image
-                src={fullOnly}
-                alt=""
-                fill
-                priority={false}
-                fetchPriority="low"
-                quality={78}
-                className={cn(
-                  "pointer-events-none absolute inset-0 z-[2] object-cover transition-opacity duration-500 ease-out",
-                  fullLoaded ? "opacity-100" : "opacity-0",
-                  !revealPair && "opacity-0"
-                )}
-                sizes={sizes}
-                onLoadingComplete={() => setFullLoaded(true)}
-                onError={() => {
-                  /* 高清失败则保留缩略图，不阻断投票 */
-                }}
-              />
-            ) : null}
-          </>
-        ) : (
-          <Image
-            src={singleSrc}
-            alt=""
-            fill
-            priority={primary}
-            fetchPriority={primary ? "high" : "low"}
-            quality={72}
-            className={cn(
-              "object-cover transition duration-300",
-              revealPair && !busy && "group-hover:scale-[1.02]",
-              !revealPair && "opacity-0"
-            )}
-            sizes={sizes}
-            onLoadingComplete={onImageReady}
-            onError={onImageError}
-          />
-        )}
+        <ProgressiveRemoteImage
+          thumbUrlRaw={thumbLayerRaw}
+          fullUrlRaw={fullLayerRaw}
+          resetKey={image.id}
+          sizes={sizes}
+          priority={primary}
+          fetchPriority={primary ? "high" : "low"}
+          visible={revealPair}
+          imageClassName={cn(
+            revealPair && !interactionLocked && "group-hover:scale-[1.02]",
+            showPick && resultRole === "loser" && "brightness-[0.88] contrast-[0.92]"
+          )}
+          onThumbLoadingComplete={onImageReady}
+          onThumbError={onImageError}
+        />
 
         <div
           className={cn(
             "pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent opacity-90 transition-opacity duration-300",
-            !revealPair && "opacity-0"
+            !revealPair && "opacity-0",
+            showPick && resultRole === "loser" && "from-black/85 via-black/25 to-black/20 opacity-100"
           )}
         />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3">
-          <span
-            className={cn(
-              "rounded-full bg-cyan-500/90 px-2 py-1 text-[10px] font-semibold text-slate-950 shadow-md transition duration-200 sm:px-3 sm:text-[11px]",
-              revealPair ? "opacity-0 group-hover:opacity-100 max-md:opacity-100 md:opacity-100" : "opacity-0"
-            )}
-          >
-            {t("duel.tapToVote")}
-          </span>
+          {!showPick ? (
+            <span
+              className={cn(
+                "rounded-full bg-cyan-500/90 px-2 py-1 text-[10px] font-semibold text-slate-950 shadow-md transition duration-200 sm:px-3 sm:text-[11px]",
+                revealPair ? "opacity-0 group-hover:opacity-100 max-md:opacity-100 md:opacity-100" : "opacity-0"
+              )}
+            >
+              {t("duel.tapToVote")}
+            </span>
+          ) : resultRole === "winner" ? (
+            <span className="rounded-full bg-emerald-400/95 px-2.5 py-1 text-[10px] font-bold text-emerald-950 shadow-md sm:px-3 sm:text-[11px]">
+              ✓
+            </span>
+          ) : null}
         </div>
       </div>
-      <div className="flex items-center border-t border-white/10 bg-black/25 px-3 py-2.5">
-        <span className="text-[11px] text-white/45">{revealPair ? t("duel.tapReady") : t("duel.tapWait")}</span>
+      <div
+        className={cn(
+          "flex items-center border-t px-3 py-2.5 transition-colors duration-300",
+          !showPick && "border-white/10 bg-black/25",
+          showPick && resultRole === "winner" && "border-emerald-400/40 bg-emerald-950/40",
+          showPick && resultRole === "loser" && "border-white/[0.06] bg-black/35"
+        )}
+      >
+        <span
+          className={cn(
+            "text-[11px] transition-colors duration-300",
+            !showPick && "text-white/45",
+            showPick && resultRole === "winner" && "font-medium text-emerald-100/95",
+            showPick && resultRole === "loser" && "text-white/38"
+          )}
+        >
+          {showPick && resultRole === "winner"
+            ? t("duel.footerWinner")
+            : showPick && resultRole === "loser"
+              ? t("duel.footerLoser")
+              : revealPair
+                ? t("duel.tapReady")
+                : t("duel.tapWait")}
+        </span>
       </div>
     </motion.button>
   );
