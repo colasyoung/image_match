@@ -13,12 +13,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
       - run: npm ci
       - name: Build
         run: npm run build
         env:
+          VERCEL: "1"
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role

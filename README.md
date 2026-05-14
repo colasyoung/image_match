@@ -66,7 +66,7 @@ npm run dev
 
 ## 公网运行
 
-本应用含 **API Routes**，需要支持 **Node.js** 的 Next.js 运行时（常见 PaaS 均可）。在托管控制台配置与 `.env.example` **同名同含义**的环境变量即可。
+本应用含 **API Routes**，需要支持 **Node.js** 的 Next.js 运行时（常见 PaaS 均可）。`package.json` 的 **`engines.node`** 为 **`>=22.0.0`**（与 dev 依赖 **wrangler** 4.9x 要求一致；Vercel 会选用 Node 22+）。在托管控制台配置与 `.env.example` **同名同含义**的环境变量即可。
 
 仓库内附带 **OpenNext + Cloudflare** 相关文件；若你在该路线或类似边缘平台上构建，请按对应官方文档设置构建命令与变量。构建或运行报错时，以该平台日志与 `npm run build` 本地输出为准。
 
