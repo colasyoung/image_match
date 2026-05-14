@@ -11,7 +11,8 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-// 本地开发与 Cloudflare / OpenNext 对齐；生产 `next build`（如 Vercel）可安全加载该模块
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-
-initOpenNextCloudflareForDev();
+// Vercel 构建与运行时会设置 VERCEL=1；此处跳过 OpenNext，避免与纯 Node 托管冲突。
+// Cloudflare Workers（OpenNext）构建未设置 VERCEL，需要初始化以匹配适配器预期。
+if (process.env.VERCEL !== "1") {
+  void import("@opennextjs/cloudflare").then((m) => m.initOpenNextCloudflareForDev());
+}

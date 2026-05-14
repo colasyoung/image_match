@@ -69,10 +69,11 @@ npm run dev
 
 #### Vercel 部署失败 / GitHub 上 Vercel check 红字
 
-1. 打开 Vercel 项目 → **Deployments → 失败的那条 → Build Logs**，看最后一屏报错（常见：`npm ci` 失败、依赖无法下载、Node 版本不符）。
+1. 打开 Vercel 项目 → **Deployments → 失败的那条 → Build Logs**，看最后一屏报错（依赖下载、Node 版本、或 **Build / Deploy** 哪一步失败）。
 2. 本项目在 `package.json` 里声明了 **`engines.node >= 20.9.0`**；请在 Vercel **Settings → General → Node.js Version** 选 **20.x**（不要低于 20.9）。
-3. 仓库内已带 **`.npmrc`**（固定 `registry.npmjs.org`）并重生成 **`package-lock.json`**，避免国内镜像 `npmmirror` 导致在海外构建机上下载依赖失败或超时。
-4. 确认 **Environment Variables** 已按上文填齐（缺变量时，**运行期**接口会报错；一般不影响 `next build`，但请避免漏配）。
+3. 仓库内已带 **`.npmrc`**（固定 `registry.npmjs.org`）与 **`package-lock.json`**，避免国内镜像在海外构建机上下载失败或超时。
+4. 确认 **Environment Variables** 已按上文填齐（缺变量时运行期会报错；一般不影响 `next build`）。
+5. 根目录 **`vercel.json`** 仅设置 `buildCommand`；安装使用 Vercel 默认 **`npm install`**（与 lockfile 一致即可）。若 Build 绿但 Deploy 红，在日志中搜 `Error` / `limit`。
 
 #### Cloudflare Workers 自动构建（OpenNext）
 
@@ -80,6 +81,20 @@ npm run dev
 
 - **环境变量**：在 Cloudflare 项目的 **Settings → Variables** 中为 Worker 配置与 `.env.example` / Vercel 相同的变量（如 `NEXT_PUBLIC_SUPABASE_*`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等），否则运行期接口会失败。
 - **`wrangler.jsonc` 里的 `name` / `services[0].service`** 需与你在 Cloudflare 控制台里的 **Worker 名称**一致（当前为 `image-match`；若你的服务名不同，请改两处保持一致）。
+
+**构建成功但浏览器「访问不到」或白屏时**，请逐项核对：
+
+1. **访问的 URL 是否正确**  
+   Workers 默认域名一般为：  
+   `https://<worker 名称>.<你的子域>.workers.dev`  
+   （在 **Workers & Pages → image-match → 概览** 里可复制；**不是** GitHub 仓库地址，也通常**不是** Cloudflare Pages 的 `*.pages.dev`。）
+2. **先探活**：浏览器或终端访问 **`/api/health`**，例如 `https://…workers.dev/api/health`  
+   应返回 JSON：`{"ok":true,"service":"image-match"}`。若此处 404/522，说明流量没到 Worker 或路由未生效。
+3. **环境变量是否在 Worker 上配置**  
+   与 `.env.example` 一致：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等。缺省时首页/API 会报错或空白。敏感项用 **Encrypt**。
+4. **自定义域名**  
+   若绑了自有域名，需在 DNS 按 Cloudflare 提示指向该 Worker，并等待生效；未生效前请先用 `*.workers.dev` 验证。
+5. **本地看实时日志**（可选）：安装依赖后执行 `npx wrangler tail`（需登录 Cloudflare），再刷新页面看服务端报错。
 
 **仍更简单、推荐的做法**：应用主部署在 **Vercel**（`npm run build`），Cloudflare **只做 DNS** 指到 Vercel（见下）。两套 CI（Vercel + Cloudflare）同时连同一分支时，维护成本更高。
 
