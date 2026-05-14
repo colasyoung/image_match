@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useRef, useState, type DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { IMGBB_DEFAULT_EXPIRATION_SECONDS, IMGBB_UPLOAD_MAX_BYTES } from "@/lib/imgbb";
 
@@ -72,9 +75,11 @@ type PickProps = {
   label: string;
   subLabel?: string;
   className?: string;
+  /** 是否支持把文件拖进选区（默认开启） */
+  enableDragDrop?: boolean;
 };
 
-/** 大尺寸、易发现的上传触发器（隐藏原生 input） */
+/** 大尺寸、易发现的上传触发器（隐藏原生 input），可选拖拽添加 */
 export function ImagePickButton({
   id = "image-pick-input",
   disabled,
@@ -85,31 +90,86 @@ export function ImagePickButton({
   label,
   subLabel,
   className,
+  enableDragDrop = true,
 }: PickProps) {
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepth = useRef(0);
+
+  const endDrag = useCallback(() => {
+    dragDepth.current = 0;
+    setDragActive(false);
+  }, []);
+
+  const handleDragEnter = (e: DragEvent) => {
+    if (!enableDragDrop || disabled || busy) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth.current += 1;
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    if (!enableDragDrop || disabled || busy) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) endDrag();
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    if (!enableDragDrop || disabled || busy) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    if (!enableDragDrop || disabled || busy) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endDrag();
+    const dt = e.dataTransfer;
+    if (dt?.files?.length) onFiles(dt.files);
+  };
+
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <label
-        htmlFor={id}
+      <div
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-cyan-400/50 bg-gradient-to-b from-cyan-500/20 to-teal-900/20 px-6 py-5 text-center shadow-lg shadow-cyan-900/20 transition hover:border-cyan-300/70 hover:from-cyan-500/30 hover:to-teal-900/30",
-          (disabled || busy) && "pointer-events-none opacity-45"
+          "rounded-2xl transition",
+          dragActive && enableDragDrop && !disabled && !busy && "ring-2 ring-cyan-300/80 ring-offset-2 ring-offset-slate-950"
         )}
       >
-        <span className="text-base font-semibold tracking-wide text-white">{busy ? "处理中…" : label}</span>
-        {subLabel ? <span className="mt-1 text-xs text-white/55">{subLabel}</span> : null}
-        <input
-          id={id}
-          type="file"
-          accept={accept}
-          multiple={multiple}
-          className="sr-only"
-          disabled={disabled || busy}
-          onChange={(e) => {
-            onFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </label>
+        <label
+          htmlFor={id}
+          className={cn(
+            "flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-cyan-400/50 bg-gradient-to-b from-cyan-500/20 to-teal-900/20 px-6 py-5 text-center shadow-lg shadow-cyan-900/20 transition hover:border-cyan-300/70 hover:from-cyan-500/30 hover:to-teal-900/30",
+            (disabled || busy) && "pointer-events-none opacity-45",
+            dragActive && enableDragDrop && !disabled && !busy && "border-cyan-200/70 from-cyan-500/35 to-teal-900/35"
+          )}
+        >
+          <span className="text-base font-semibold tracking-wide text-white">{busy ? "处理中…" : label}</span>
+          {subLabel ? <span className="mt-1 text-xs text-white/55">{subLabel}</span> : null}
+          {enableDragDrop && !disabled && !busy ? (
+            <span className="mt-2 text-[11px] text-cyan-200/75">支持把图片从文件夹拖到这里</span>
+          ) : null}
+          <input
+            id={id}
+            type="file"
+            accept={accept}
+            multiple={multiple}
+            className="sr-only"
+            disabled={disabled || busy}
+            onChange={(e) => {
+              onFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
     </div>
   );
 }

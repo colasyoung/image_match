@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,16 @@ import { cn } from "@/lib/utils";
 type Created = { slug: string; manageToken: string; id: string };
 
 type ImageRow = { id: string; thumb_url: string | null; image_url: string };
+
+type QueuedImage = { id: string; file: File; previewUrl: string };
+
+function filterImageFiles(raw: File[]): File[] {
+  return raw.filter(
+    (f) =>
+      (Boolean(f.type) && f.type.startsWith("image/")) ||
+      /\.(jpe?g|png|gif|webp|avif|hei[c|f]|heic)$/i.test(f.name)
+  );
+}
 
 function friendlyApiError(raw: string): string {
   const map: Record<string, string> = {
@@ -61,30 +71,85 @@ export default function CreatePage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const [queue, setQueue] = useState<QueuedImage[]>([]);
   const [copied, setCopied] = useState<"manage" | "vote" | null>(null);
   const [activatedSuccess, setActivatedSuccess] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<ImageRow[]>([]);
   const [uploadPhase, setUploadPhase] = useState<string | null>(null);
+  const [pickHint, setPickHint] = useState<string | null>(null);
+
+  const uploadedCountLive = useRef(0);
 
   const canCreate = title.trim().length > 0;
   const uploadedCount = uploadedImages.length;
   const needMore = Math.max(0, 2 - uploadedCount);
   const canActivate = uploadedCount >= 2 && !loading;
-  const slotsLeft = Math.max(0, 10 - uploadedCount - files.length);
+  const slotsLeft = Math.max(0, 10 - uploadedCount - queue.length);
 
-  const previewUrls = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => {
-    return () => {
-      previewUrls.forEach((u) => URL.revokeObjectURL(u));
-    };
-  }, [previewUrls]);
+    uploadedCountLive.current = uploadedCount;
+  }, [uploadedCount]);
 
   const refreshUploaded = useCallback(async (c: Created) => {
     const res = await fetch(`/api/matches/${c.slug}?token=${encodeURIComponent(c.manageToken)}`);
     if (!res.ok) return;
-    const j = (await res.json()) as { images?: ImageRow[] };
-    setUploadedImages((j.images ?? []) as ImageRow[]);
+    const j = (await res.json()) as { images?: unknown };
+    const raw = j.images;
+    const list = Array.isArray(raw) ? raw : [];
+    setUploadedImages(list as ImageRow[]);
+  }, []);
+
+  const addIncomingFiles = useCallback((list: FileList | null) => {
+    const raw = list?.length ? Array.from(list) : [];
+    if (!raw.length) return;
+    const images = filterImageFiles(raw);
+    if (!images.length) {
+      setPickHint("没有发现图片文件，请选择 jpg、png、webp 等常见图片格式。");
+      window.setTimeout(() => setPickHint(null), 4500);
+      return;
+    }
+
+    let hint: string | null = null;
+    setQueue((prev) => {
+      const u = uploadedCountLive.current;
+      const room = Math.max(0, 10 - u - prev.length);
+      if (room <= 0) {
+        hint = "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
+        return prev;
+      }
+      const take = images.slice(0, room);
+      const skipped = images.length - take.length;
+      const additions = take.map((file) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 10)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+      if (skipped > 0) {
+        hint = `已加入 ${take.length} 张；另有 ${skipped} 张因超出上限未加入。`;
+      } else {
+        hint = `已加入 ${take.length} 张，当前队列 ${prev.length + take.length} 张（记得点下方「上传」）。`;
+      }
+      return [...prev, ...additions];
+    });
+    if (hint) {
+      setPickHint(hint);
+      window.setTimeout(() => setPickHint(null), 4500);
+    }
+  }, []);
+
+  const removeFromQueue = useCallback((id: string) => {
+    setQueue((prev) => {
+      const q = prev.find((x) => x.id === id);
+      if (q) URL.revokeObjectURL(q.previewUrl);
+      return prev.filter((x) => x.id !== id);
+    });
+  }, []);
+
+  const clearQueueRevoke = useCallback(() => {
+    setQueue((prev) => {
+      prev.forEach((q) => URL.revokeObjectURL(q.previewUrl));
+      return [];
+    });
   }, []);
 
   useEffect(() => {
@@ -108,18 +173,20 @@ export default function CreatePage() {
       return;
     }
     const j = (await res.json()) as Created;
+    clearQueueRevoke();
+    setPickHint(null);
     setCreated({ slug: j.slug, manageToken: j.manageToken, id: j.id });
     setActivatedSuccess(false);
-  }, [title, description, isPublic]);
+  }, [title, description, isPublic, clearQueueRevoke]);
 
   const uploadAll = useCallback(async () => {
-    if (!created || files.length === 0) return;
+    if (!created || queue.length === 0) return;
     setErr(null);
     setLoading(true);
     try {
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        setUploadPhase(`正在上传第 ${i + 1} / ${files.length} 张…`);
+      for (let i = 0; i < queue.length; i++) {
+        const f = queue[i].file;
+        setUploadPhase(`正在上传第 ${i + 1} / ${queue.length} 张…`);
         const fd = new FormData();
         fd.set("matchId", created.id);
         fd.set("manageToken", created.manageToken);
@@ -131,7 +198,9 @@ export default function CreatePage() {
         }
       }
       setUploadPhase(null);
-      setFiles([]);
+      clearQueueRevoke();
+      setPickHint("上传完成！若未满 2 张请继续添加；够了即可开启比赛。");
+      window.setTimeout(() => setPickHint(null), 5000);
       await refreshUploaded(created);
     } catch (e) {
       setUploadPhase(null);
@@ -140,7 +209,7 @@ export default function CreatePage() {
       return;
     }
     setLoading(false);
-  }, [created, files, refreshUploaded]);
+  }, [created, queue, refreshUploaded, clearQueueRevoke]);
 
   const activate = useCallback(async () => {
     if (!created || uploadedCount < 2) return;
@@ -383,41 +452,41 @@ export default function CreatePage() {
                   </ul>
                 ) : null}
 
+                {pickHint ? (
+                  <p className="rounded-lg border border-emerald-400/35 bg-emerald-500/15 px-3 py-2 text-center text-sm text-emerald-50/95">
+                    {pickHint}
+                  </p>
+                ) : null}
+
                 <ImagePickButton
                   id="create-upload-pick"
                   disabled={loading || slotsLeft <= 0}
                   busy={loading}
-                  label={slotsLeft <= 0 ? "已达 10 张上限" : "点这里选择照片"}
+                  label={slotsLeft <= 0 ? "已达 10 张上限" : "点这里选择照片，或拖进来"}
                   subLabel={
                     slotsLeft <= 0
-                      ? "请先上传或删除队列中的图"
-                      : `还可再选约 ${slotsLeft} 张（含当前队列）`
+                      ? "请先上传或删掉队列里的图"
+                      : `还可再添加约 ${slotsLeft} 个空位（含当前队列）`
                   }
-                  onFiles={(list) => {
-                    if (!list?.length) return;
-                    setFiles((prev) => {
-                      const maxQueue = Math.max(0, 10 - uploadedCount);
-                      const room = maxQueue - prev.length;
-                      if (room <= 0) return prev;
-                      return [...prev, ...Array.from(list).slice(0, room)];
-                    });
-                  }}
+                  onFiles={addIncomingFiles}
                 />
 
-                {files.length > 0 ? (
+                {queue.length > 0 ? (
                   <div className="space-y-2">
-                    <p className="text-center text-xs text-white/50">待上传队列（{files.length} 张）</p>
+                    <p className="text-center text-xs text-white/50">
+                      待上传队列（{queue.length} 张）— 选好之后点下方「上传」才会真正传到比赛里
+                    </p>
                     <ul className="flex flex-wrap justify-center gap-2">
-                      {files.map((f, i) => (
-                        <li key={`${f.name}-${f.size}-${f.lastModified}-${i}`} className="relative">
+                      {queue.map((q) => (
+                        <li key={q.id} className="relative">
                           <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-cyan-400/30 bg-black/50">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={previewUrls[i]} alt="" className="h-full w-full object-cover" />
+                            <img src={q.previewUrl} alt="" className="h-full w-full object-cover" />
                           </div>
                           <button
                             type="button"
                             className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/80 text-[10px] text-white shadow hover:bg-red-500/90"
-                            onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                            onClick={() => removeFromQueue(q.id)}
                             aria-label="从队列移除"
                           >
                             ×
@@ -433,11 +502,15 @@ export default function CreatePage() {
 
                 <div className="flex flex-col gap-3">
                   <Button
-                    disabled={!files.length || loading}
+                    disabled={!queue.length || loading}
                     className="min-h-12 w-full bg-cyan-500/85 text-base font-semibold text-slate-950 hover:bg-cyan-400"
                     onClick={() => void uploadAll()}
                   >
-                    {loading && files.length > 0 ? "正在上传…" : files.length ? `上传这 ${files.length} 张到比赛` : "请先选择图片"}
+                    {loading && queue.length > 0
+                      ? "正在上传…"
+                      : queue.length
+                        ? `上传这 ${queue.length} 张到比赛`
+                        : "请先选择或拖入图片"}
                   </Button>
 
                   <div className="rounded-xl border border-white/10 bg-black/25 p-4">

@@ -59,11 +59,17 @@ export function ManageClient({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [copiedPageUrl, setCopiedPageUrl] = useState(false);
+  const [copiedVoteUrl, setCopiedVoteUrl] = useState(false);
 
   const pageUrl = useMemo(() => {
     if (typeof window === "undefined" || !token || !slug) return "";
     return `${window.location.origin}/manage/${slug}?token=${encodeURIComponent(token)}`;
   }, [slug, token]);
+
+  const votePageUrl = useMemo(() => {
+    if (typeof window === "undefined" || !slug) return "";
+    return `${window.location.origin}/m/${slug}`;
+  }, [slug]);
 
   const load = useCallback(async () => {
     await Promise.resolve();
@@ -201,6 +207,31 @@ export function ManageClient({ slug }: { slug: string }) {
                 投票页 <code className="rounded bg-black/30 px-1">/m/{slug}</code>{" "}
                 没有管理入口；丢失下方链接将无法再管理本场比赛。
               </p>
+              {votePageUrl ? (
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3">
+                  <p className="text-[11px] font-medium text-white/60">投票页链接（发给参与者）</p>
+                  <code className="mt-1 block max-h-20 overflow-auto break-all text-[10px] leading-relaxed text-cyan-100/90">
+                    {votePageUrl}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-2 !border-cyan-400/40 !text-cyan-50 hover:!bg-cyan-500/15"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(votePageUrl).then(
+                        () => {
+                          setCopiedVoteUrl(true);
+                          setTimeout(() => setCopiedVoteUrl(false), 2500);
+                        },
+                        () => setErr("复制投票链接失败，请手动复制上方地址")
+                      );
+                    }}
+                  >
+                    {copiedVoteUrl ? "投票链接已复制" : "复制投票页链接"}
+                  </Button>
+                </div>
+              ) : null}
+              <p className="mt-3 text-[11px] text-amber-100/65">本页管理链接（仅自己保留）：</p>
               <code className="mt-2 block max-h-24 overflow-auto break-all rounded-lg bg-black/40 p-2 text-[10px] leading-relaxed text-cyan-100/90">
                 {pageUrl}
               </code>
@@ -243,12 +274,31 @@ export function ManageClient({ slug }: { slug: string }) {
                 </div>
                 <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/55">{meta.hint}</p>
               </div>
-              <Link
-                href={`/m/${data.match.slug}`}
-                className="shrink-0 rounded-xl border border-cyan-400/35 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-500/20"
-              >
-                打开投票页
-              </Link>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <Link
+                  href={`/m/${data.match.slug}`}
+                  className="inline-flex shrink-0 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-500/20"
+                >
+                  打开投票页
+                </Link>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="!border-cyan-400/35 !text-cyan-50"
+                  onClick={() => {
+                    if (!votePageUrl) return;
+                    void navigator.clipboard.writeText(votePageUrl).then(
+                      () => {
+                        setCopiedVoteUrl(true);
+                        setTimeout(() => setCopiedVoteUrl(false), 2500);
+                      },
+                      () => setErr("复制失败")
+                    );
+                  }}
+                >
+                  {copiedVoteUrl ? "已复制投票链接" : "快速复制投票链接"}
+                </Button>
+              </div>
             </div>
 
             {/* 状态操作：高亮「可点」与「当前」 */}
