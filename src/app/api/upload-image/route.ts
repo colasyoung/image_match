@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { downloadImageForUpload } from "@/lib/fetch-remote-image";
 import { addImageToMatch, uploadImageToImgbb } from "@/server/match-service";
 import {
   IMGBB_DEFAULT_EXPIRATION_SECONDS,
@@ -22,7 +23,8 @@ export async function GET() {
       fields: {
         matchId: "比赛 UUID（与创建接口返回的 id 一致）",
         manageToken: "该比赛的管理 token",
-        file: "单个图片文件",
+        file: "单个图片文件（与 imageUrl 二选一）",
+        imageUrl: "可选：公网 http(s) 图片地址，由服务端拉取后再传 imgbb（与 file 二选一）",
       },
     },
     limits: {
@@ -47,25 +49,42 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const matchId = String(form.get("matchId") ?? "");
     const manageToken = String(form.get("manageToken") ?? "");
+    const imageUrlField = String(form.get("imageUrl") ?? "").trim();
     const file = form.get("file");
-    if (!matchId || !manageToken || !(file instanceof Blob)) {
-      return NextResponse.json({ error: "matchId, manageToken, file required" }, { status: 400 });
+    if (!matchId || !manageToken) {
+      return NextResponse.json({ error: "matchId, manageToken required" }, { status: 400 });
     }
-    const blob = file as Blob;
-    if (blob.size > IMGBB_UPLOAD_MAX_BYTES) {
-      return NextResponse.json(
-        { error: `文件过大：最大 ${IMGBB_UPLOAD_MAX_BYTES / (1024 * 1024)}MB` },
-        { status: 413 }
-      );
+
+    let buf: Buffer;
+    let name: string;
+
+    if (imageUrlField) {
+      if (file instanceof Blob && file.size > 0) {
+        return NextResponse.json({ error: "请只传 file 或 imageUrl 之一" }, { status: 400 });
+      }
+      const remote = await downloadImageForUpload(imageUrlField);
+      buf = remote.buffer;
+      name = remote.filename;
+    } else if (file instanceof Blob) {
+      const blob = file as Blob;
+      if (blob.size > IMGBB_UPLOAD_MAX_BYTES) {
+        return NextResponse.json(
+          { error: `文件过大：最大 ${IMGBB_UPLOAD_MAX_BYTES / (1024 * 1024)}MB` },
+          { status: 413 }
+        );
+      }
+      buf = Buffer.from(await blob.arrayBuffer());
+      if (buf.byteLength > IMGBB_UPLOAD_MAX_BYTES) {
+        return NextResponse.json(
+          { error: `文件过大：最大 ${IMGBB_UPLOAD_MAX_BYTES / (1024 * 1024)}MB` },
+          { status: 413 }
+        );
+      }
+      name = (file as File).name || "upload";
+    } else {
+      return NextResponse.json({ error: "需要 file 或 imageUrl" }, { status: 400 });
     }
-    const buf = Buffer.from(await blob.arrayBuffer());
-    if (buf.byteLength > IMGBB_UPLOAD_MAX_BYTES) {
-      return NextResponse.json(
-        { error: `文件过大：最大 ${IMGBB_UPLOAD_MAX_BYTES / (1024 * 1024)}MB` },
-        { status: 413 }
-      );
-    }
-    const name = (file as File).name || "upload";
+
     const uploaded = await uploadImageToImgbb(buf.toString("base64"), name);
     const row = await addImageToMatch({
       matchId,

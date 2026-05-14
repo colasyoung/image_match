@@ -3,6 +3,12 @@
 import { useCallback, useRef, useState, type DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { IMGBB_DEFAULT_EXPIRATION_SECONDS, IMGBB_UPLOAD_MAX_BYTES } from "@/lib/imgbb";
+import {
+  extractDataUrlImageFiles,
+  extractWebImageDropUrls,
+  filterDroppedImageFiles,
+  mergeToFileList,
+} from "@/lib/web-image-drop";
 
 const MB = IMGBB_UPLOAD_MAX_BYTES / (1024 * 1024);
 const DEFAULT_DAYS = Math.round(IMGBB_DEFAULT_EXPIRATION_SECONDS / 86_400);
@@ -11,7 +17,8 @@ function FullHintList() {
   return (
     <ul className="mt-1.5 list-inside list-disc space-y-1 text-cyan-100/80">
       <li>
-        单张最大 <strong className="text-white">{MB}MB</strong>，超出将上传失败。
+        单张最大 <strong className="text-white">{MB}MB</strong>，超出将上传失败。可从<strong className="text-white">本机</strong>或
+        <strong className="text-white">其它网页</strong>把图片拖进上传区：外链由服务端拉取后再传 imgbb（内网、本地地址会被拒绝）。
       </li>
       <li>
         服务端使用 imgbb 参数 <code className="rounded bg-black/30 px-1">expiration</code>（默认{" "}
@@ -47,7 +54,7 @@ export function ImageUploadHints({
         <>
           <p className="mt-1.5 text-cyan-100/85">
             每张最大 <strong className="text-white">{MB}MB</strong>；托管约 <strong className="text-white">{DEFAULT_DAYS}</strong>{" "}
-            天后会自动删除，重要照片请自己留备份。
+            天后会自动删除，重要照片请自己留备份。可从网页拖入图片，外链由服务端拉取后上传。
           </p>
           <details className="mt-2 group">
             <summary className="cursor-pointer list-none text-cyan-200/90 marker:content-none [&::-webkit-details-marker]:hidden">
@@ -72,6 +79,8 @@ type PickProps = {
   multiple?: boolean;
   accept?: string;
   onFiles: (files: FileList | null) => void;
+  /** 从其它网页拖入时解析出的 http(s) 图片地址，由页面调用上传接口（服务端拉取） */
+  onWebImageUrls?: (urls: string[]) => void;
   label: string;
   subLabel?: string;
   className?: string;
@@ -87,6 +96,7 @@ export function ImagePickButton({
   multiple = true,
   accept = "image/*",
   onFiles,
+  onWebImageUrls,
   label,
   subLabel,
   className,
@@ -122,13 +132,23 @@ export function ImagePickButton({
     e.stopPropagation();
   };
 
-  const handleDrop = (e: DragEvent) => {
+  const handleDrop = async (e: DragEvent) => {
     if (!enableDragDrop || disabled || busy) return;
     e.preventDefault();
     e.stopPropagation();
     endDrag();
     const dt = e.dataTransfer;
-    if (dt?.files?.length) onFiles(dt.files);
+    if (!dt) return;
+
+    const fromPicker = dt.files?.length ? Array.from(dt.files) : [];
+    const droppedFiles = filterDroppedImageFiles(fromPicker);
+    const dataUrlFiles = await extractDataUrlImageFiles(dt);
+    const mergedLocal = [...droppedFiles, ...dataUrlFiles];
+    const list = mergeToFileList(mergedLocal);
+    if (list?.length) onFiles(list);
+
+    const urls = extractWebImageDropUrls(dt);
+    if (urls.length && onWebImageUrls && !list?.length) onWebImageUrls(urls);
   };
 
   return (
@@ -154,7 +174,7 @@ export function ImagePickButton({
           <span className="text-base font-semibold tracking-wide text-white">{busy ? "处理中…" : label}</span>
           {subLabel ? <span className="mt-1 text-xs text-white/55">{subLabel}</span> : null}
           {enableDragDrop && !disabled && !busy ? (
-            <span className="mt-2 text-[11px] text-cyan-200/75">支持把图片从文件夹拖到这里</span>
+            <span className="mt-2 text-[11px] text-cyan-200/75">支持从本机或网页把图片拖到这里</span>
           ) : null}
           <input
             id={id}

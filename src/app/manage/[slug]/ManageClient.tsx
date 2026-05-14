@@ -186,6 +186,40 @@ export function ManageClient({ slug }: { slug: string }) {
     await load();
   };
 
+  const uploadWebUrls = async (urls: string[]) => {
+    if (!token || !data || !urls.length) return;
+    if (data.images.length >= 10) {
+      setErr("最多 10 张图片");
+      return;
+    }
+    const room = 10 - data.images.length;
+    const take = [...new Set(urls.map((u) => u.trim()).filter(Boolean))].slice(0, room);
+    if (!take.length) return;
+
+    setUploading(true);
+    setErr(null);
+    try {
+      for (const imageUrl of take) {
+        const fd = new FormData();
+        fd.set("matchId", data.match.id);
+        fd.set("manageToken", token);
+        fd.set("imageUrl", imageUrl);
+        const res = await fetch("/api/upload-image", { method: "POST", body: fd });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error ?? "上传失败");
+        }
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "上传失败");
+      setUploading(false);
+      await load();
+      return;
+    }
+    setUploading(false);
+    await load();
+  };
+
   const status = data?.match.status ?? "";
   const meta = STATUS_META[status] ?? STATUS_META.draft;
   const canActivate = (data?.images.length ?? 0) >= 2;
@@ -391,9 +425,10 @@ export function ManageClient({ slug }: { slug: string }) {
                 id="manage-upload-pick"
                 disabled={loading || data.images.length >= 10}
                 busy={uploading}
-                label={data.images.length >= 10 ? "已达 10 张上限" : "点击选择图片上传"}
-                subLabel="支持多选 · 每张单独提交 · 与创建页相同规则"
+                label={data.images.length >= 10 ? "已达 10 张上限" : "点击选择图片上传，或从网页拖入"}
+                subLabel="支持多选 · 每张单独提交 · 与创建页相同规则；网页拖入由服务端拉取原图后上传图床"
                 onFiles={(list) => void uploadFiles(list)}
+                onWebImageUrls={(u) => void uploadWebUrls(u)}
               />
             </div>
 

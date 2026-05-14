@@ -11,7 +11,9 @@ type Created = { slug: string; manageToken: string; id: string };
 
 type ImageRow = { id: string; thumb_url: string | null; image_url: string };
 
-type QueuedImage = { id: string; file: File; previewUrl: string };
+type QueuedImage =
+  | { id: string; kind: "file"; file: File; previewUrl: string }
+  | { id: string; kind: "url"; sourceUrl: string; previewUrl: string };
 
 function filterImageFiles(raw: File[]): File[] {
   return raw.filter(
@@ -121,6 +123,7 @@ export default function CreatePage() {
       const skipped = images.length - take.length;
       const additions = take.map((file) => ({
         id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 10)}`,
+        kind: "file" as const,
         file,
         previewUrl: URL.createObjectURL(file),
       }));
@@ -137,17 +140,72 @@ export default function CreatePage() {
     }
   }, []);
 
+  const addIncomingUrls = useCallback((urls: string[]) => {
+    const unique = [...new Set(urls.map((u) => u.trim()).filter(Boolean))];
+    if (!unique.length) return;
+
+    let hint: string | null = null;
+    setQueue((prev) => {
+      const u = uploadedCountLive.current;
+      const room = Math.max(0, 10 - u - prev.length);
+      if (room <= 0) {
+        hint = "已达上限：一共最多 10 张（含已上传）。请先点「上传」或删掉队列里的缩略图。";
+        return prev;
+      }
+
+      const already = new Set<string>();
+      for (const q of prev) {
+        if (q.kind === "url") already.add(q.sourceUrl);
+      }
+
+      const take: string[] = [];
+      for (const url of unique) {
+        if (take.length >= room) break;
+        if (already.has(url)) continue;
+        take.push(url);
+      }
+
+      if (!take.length) {
+        hint = unique.every((x) => already.has(x))
+          ? "这些网页图片链接已在队列中。"
+          : "没有可用空位添加更多链接。";
+        return prev;
+      }
+
+      const additions: QueuedImage[] = take.map((sourceUrl) => ({
+        id: `url-${sourceUrl.slice(0, 24)}-${Math.random().toString(36).slice(2, 11)}`,
+        kind: "url" as const,
+        sourceUrl,
+        previewUrl: sourceUrl,
+      }));
+
+      const dropped = unique.length - take.length;
+      if (dropped > 0) {
+        hint = `已加入 ${take.length} 个网页图片链接；另有 ${dropped} 个因重复或超出上限未加入。`;
+      } else {
+        hint = `已加入 ${take.length} 个网页图片链接（点「上传」后由服务端拉取并传到图床）。`;
+      }
+      return [...prev, ...additions];
+    });
+    if (hint) {
+      setPickHint(hint);
+      window.setTimeout(() => setPickHint(null), 5000);
+    }
+  }, []);
+
   const removeFromQueue = useCallback((id: string) => {
     setQueue((prev) => {
       const q = prev.find((x) => x.id === id);
-      if (q) URL.revokeObjectURL(q.previewUrl);
+      if (q?.kind === "file") URL.revokeObjectURL(q.previewUrl);
       return prev.filter((x) => x.id !== id);
     });
   }, []);
 
   const clearQueueRevoke = useCallback(() => {
     setQueue((prev) => {
-      prev.forEach((q) => URL.revokeObjectURL(q.previewUrl));
+      prev.forEach((q) => {
+        if (q.kind === "file") URL.revokeObjectURL(q.previewUrl);
+      });
       return [];
     });
   }, []);
@@ -185,12 +243,16 @@ export default function CreatePage() {
     setLoading(true);
     try {
       for (let i = 0; i < queue.length; i++) {
-        const f = queue[i].file;
+        const q = queue[i];
         setUploadPhase(`正在上传第 ${i + 1} / ${queue.length} 张…`);
         const fd = new FormData();
         fd.set("matchId", created.id);
         fd.set("manageToken", created.manageToken);
-        fd.set("file", f);
+        if (q.kind === "file") {
+          fd.set("file", q.file);
+        } else {
+          fd.set("imageUrl", q.sourceUrl);
+        }
         const res = await fetch("/api/upload-image", { method: "POST", body: fd });
         if (!res.ok) {
           const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -462,13 +524,14 @@ export default function CreatePage() {
                   id="create-upload-pick"
                   disabled={loading || slotsLeft <= 0}
                   busy={loading}
-                  label={slotsLeft <= 0 ? "已达 10 张上限" : "点这里选择照片，或拖进来"}
+                  label={slotsLeft <= 0 ? "已达 10 张上限" : "点这里选择照片，或从本机/网页拖入"}
                   subLabel={
                     slotsLeft <= 0
                       ? "请先上传或删掉队列里的图"
-                      : `还可再添加约 ${slotsLeft} 个空位（含当前队列）`
+                      : `还可再添加约 ${slotsLeft} 个空位（含当前队列）；网页拖入会先加入队列，点上传后服务端再拉图`
                   }
                   onFiles={addIncomingFiles}
+                  onWebImageUrls={addIncomingUrls}
                 />
 
                 {queue.length > 0 ? (
