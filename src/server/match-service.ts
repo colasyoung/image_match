@@ -538,7 +538,7 @@ export type ActivityFeedItem = {
 
 export async function getActivityFeed(
   slug: string,
-  limit = 40
+  limit = 50
 ): Promise<{ items: ActivityFeedItem[]; regionCounts: Record<string, number> } | null> {
   const bundle = await getMatchForPublic(slug);
   if (!bundle) return null;

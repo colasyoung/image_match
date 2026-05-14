@@ -20,15 +20,17 @@ type Props = {
   initialRegionCounts: Record<string, number>;
 };
 
+const ACTIVITY_FEED_MAX = 50;
+
 export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Props) {
-  const [items, setItems] = useState(initialItems);
+  const [items, setItems] = useState(() => initialItems.slice(0, ACTIVITY_FEED_MAX));
   const [regionCounts, setRegionCounts] = useState(initialRegionCounts);
 
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/matches/${slug}/activity`);
     if (!res.ok) return;
     const j = (await res.json()) as { items: ActivityFeedItem[]; regionCounts: Record<string, number> };
-    if (Array.isArray(j.items)) setItems(j.items);
+    if (Array.isArray(j.items)) setItems(j.items.slice(0, ACTIVITY_FEED_MAX));
     if (j.regionCounts && typeof j.regionCounts === "object") setRegionCounts(j.regionCounts);
   }, [slug]);
 
@@ -73,7 +75,7 @@ export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Pro
           还没有记录，来投第一票吧。
         </div>
       ) : (
-        <ul className="flex max-h-[min(420px,55vh)] flex-col gap-1.5 overflow-y-auto pr-1">
+        <ul className="flex flex-col gap-1.5">
           {items.map((row) => (
             <VoteStrip key={row.id} row={row} />
           ))}
