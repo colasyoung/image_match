@@ -41,12 +41,12 @@ const STATUS_META: Record<string, { label: string; hint: string; pill: string }>
   },
   paused: {
     label: "已暂停",
-    hint: "投票已关闭；可继续或结束比赛。若删图后不足 2 张，系统会自动暂停。",
+    hint: "投票已关闭；可继续，或结束比赛（将永久删除本场全部数据）。若删图后不足 2 张，系统会自动暂停。",
     pill: "border-amber-400/50 bg-amber-500/20 text-amber-50",
   },
   ended: {
     label: "已结束",
-    hint: "比赛已归档，用户无法再投票。",
+    hint: "本场已关闭，用户无法再投票。若不再需要，可删除以清理数据库中的记录。",
     pill: "border-rose-400/45 bg-rose-500/20 text-rose-50",
   },
 };
@@ -60,6 +60,8 @@ export function ManageClient({ slug }: { slug: string }) {
   const [uploading, setUploading] = useState(false);
   const [copiedPageUrl, setCopiedPageUrl] = useState(false);
   const [copiedVoteUrl, setCopiedVoteUrl] = useState(false);
+  const [copiedAudienceUrl, setCopiedAudienceUrl] = useState(false);
+  const [momentsHint, setMomentsHint] = useState<string | null>(null);
 
   const pageUrl = useMemo(() => {
     if (typeof window === "undefined" || !token || !slug) return "";
@@ -111,8 +113,17 @@ export function ManageClient({ slug }: { slug: string }) {
     await load();
   };
 
-  const removeMatch = async () => {
-    if (!token || !confirm("确定删除整场比赛及全部数据？不可恢复。")) return;
+  /** 与「结束比赛」相同：永久删除本场比赛（二次确认） */
+  const deleteMatchPermanently = async () => {
+    if (!token) return;
+    if (
+      !confirm(
+        "「结束比赛」会永久删除本场比赛及全部投票、排行榜与图片记录，不可恢复。确定继续？"
+      )
+    ) {
+      return;
+    }
+    if (!confirm("最后确认：删除后投票链接将立即失效。点击「确定」立即永久删除。")) return;
     setLoading(true);
     const res = await fetch(`/api/matches/${slug}`, {
       method: "DELETE",
@@ -335,9 +346,10 @@ export function ManageClient({ slug }: { slug: string }) {
                       disabled={loading}
                       variant="danger"
                       className="min-w-[8.5rem] justify-center sm:min-w-[10rem]"
-                      onClick={() => void patch({ status: "ended" })}
+                      title="将弹出两次确认，确认后从数据库永久删除本场比赛"
+                      onClick={() => void deleteMatchPermanently()}
                     >
-                      结束比赛
+                      结束比赛（删除）
                     </Button>
                   )}
                 </div>
@@ -346,7 +358,19 @@ export function ManageClient({ slug }: { slug: string }) {
                 ) : null}
               </div>
             ) : (
-              <p className="mt-6 border-t border-white/10 pt-5 text-sm text-white/45">已结束的比赛不能切换状态。</p>
+              <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
+                <p className="text-sm text-white/45">已结束的比赛不能切换状态。</p>
+                <p className="text-xs text-white/35">若需从数据库中移除本场全部记录，可永久删除（同样会经过两次确认）。</p>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={loading}
+                  className="min-w-[8.5rem]"
+                  onClick={() => void deleteMatchPermanently()}
+                >
+                  删除本场比赛
+                </Button>
+              </div>
             )}
           </section>
 
@@ -413,13 +437,62 @@ export function ManageClient({ slug }: { slug: string }) {
           <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
             <p className="text-xs font-medium uppercase tracking-wide text-white/40">给观众分享的链接</p>
             <code className="mt-2 block break-all rounded-lg bg-black/40 p-3 text-xs text-cyan-100/90">
-              {typeof window !== "undefined" ? window.location.origin : ""}/m/{data.match.slug}
+              {votePageUrl || `…/m/${data.match.slug}`}
             </code>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="!border-cyan-400/40 !text-cyan-50 hover:!bg-cyan-500/15"
+                disabled={!votePageUrl}
+                onClick={() => {
+                  if (!votePageUrl) return;
+                  void navigator.clipboard.writeText(votePageUrl).then(
+                    () => {
+                      setCopiedAudienceUrl(true);
+                      setMomentsHint(null);
+                      setTimeout(() => setCopiedAudienceUrl(false), 2500);
+                    },
+                    () => setErr("复制失败，请手动复制上方链接")
+                  );
+                }}
+              >
+                {copiedAudienceUrl ? "已复制" : "快速复制链接"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="!border-white/20 !text-white/80 hover:!bg-white/10"
+                disabled={!votePageUrl}
+                title="网页无法直接调起朋友圈；会复制链接并提示在微信内的操作步骤"
+                onClick={() => {
+                  if (!votePageUrl) return;
+                  void navigator.clipboard.writeText(votePageUrl).then(
+                    () => {
+                      setCopiedAudienceUrl(true);
+                      setTimeout(() => setCopiedAudienceUrl(false), 2500);
+                      const inWeChat =
+                        typeof navigator !== "undefined" && /MicroMessenger/i.test(navigator.userAgent);
+                      setMomentsHint(
+                        inWeChat
+                          ? "链接已复制。请点右上角「···」→ 选择「分享到朋友圈」。网页无法代替你完成最后一步。"
+                          : "链接已复制。请在微信中打开该链接后，点右上角「···」→「分享到朋友圈」。（任意网页都无法从系统浏览器一键直达朋友圈。）"
+                      );
+                      window.setTimeout(() => setMomentsHint(null), 16_000);
+                    },
+                    () => setErr("复制失败，请手动复制上方链接")
+                  );
+                }}
+              >
+                微信朋友圈
+              </Button>
+            </div>
+            {momentsHint ? (
+              <p className="mt-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs leading-relaxed text-cyan-100/90">
+                {momentsHint}
+              </p>
+            ) : null}
           </section>
-
-          <Button variant="danger" disabled={loading} onClick={() => void removeMatch()}>
-            删除整场比赛
-          </Button>
         </>
       )}
     </div>

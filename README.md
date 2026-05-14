@@ -8,7 +8,7 @@
 
 1. 在 [Supabase](https://supabase.com) 新建项目，等待数据库就绪。
 2. 打开 **SQL Editor**，把仓库里 `supabase/migrations/20260514000000_init.sql` **全文粘贴执行**。若某行报错（例如 `publication` 里已包含该表），删掉对应 `alter publication` 行后重试。
-3. **Project Settings → API**：复制 `Project URL`、`anon public` key、`service_role` key（**不要**提交到 Git，只放本地 `.env.local` 或 Vercel 环境变量）。
+3. **Project Settings → API**：复制 `Project URL`、`anon public` key、`service_role` key（**不要**提交到 Git，只放在本地或服务端环境变量中）。
 4. **Database → Publications**：确认 `supabase_realtime` 里勾选了 `matches`、`images`（否则前端实时榜不会更新）。
 
 ### 2. imgbb
@@ -46,61 +46,17 @@ npm run dev
   例如：`https://xxx.vercel.app/manage/abc12xyz34?token=一长串十六进制`  
   创建成功页会高亮显示并可一键复制；**请勿把带 token 的链接发给普通投票用户**（只给主办方）。
 
-- **可选「总站」**（方便你一个人管所有比赛）：在 `.env.local` / Vercel 中设置 **`MASTER_ADMIN_SECRET`** 为足够长的随机串，然后访问：  
+- **可选「总站」**（方便集中管理多场比赛）：在环境变量中设置 **`MASTER_ADMIN_SECRET`** 为足够长的随机串，然后访问：  
   `https://你的域名/admin?key=<与 MASTER_ADMIN_SECRET 完全相同的值>`  
   会列出数据库中的比赛及各自完整管理链接。`key` 与密钥不一致或未配置时，页面会显示 404（避免暴露后台存在）。**切勿把该 URL 发到公网或聊天记录。**
 
 ---
 
-## 部署到公网（推荐 Vercel）
+## 公网运行
 
-本应用含 **API Routes**，需要支持 **Node.js** 的托管，**不要**用 GitHub Pages。
+本应用含 **API Routes**，需要支持 **Node.js** 的 Next.js 运行时（常见 PaaS 均可）。在托管控制台配置与 `.env.example` **同名同含义**的环境变量即可。
 
-1. 登录 [Vercel](https://vercel.com)，**Add New → Project**，导入你的 GitHub 仓库。
-2. Framework Preset 选 **Next.js**，其余默认即可。
-3. **Environment Variables** 里添加与 `.env.example` 一致的项目（值与 Supabase / imgbb 控制台一致）：
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`（仅服务端使用，不要改成 `NEXT_PUBLIC_`）
-   - `IMGBB_API_KEY`
-   - （可选）`IMGBB_EXPIRATION_SECONDS`：imgbb 自动删除延迟（秒，60–15552000；默认 2592000 = 30 天）
-   - （可选）`MASTER_ADMIN_SECRET`：用于 `/admin?key=…` 总站，见上文「管理页面」
-4. 点击 **Deploy**。完成后用 Vercel 提供的 `*.vercel.app` 域名测试；若上传图片失败，在 **imgbb** 或 **Vercel 函数日志**里看报错（常见为 key 错误或 imgbb 域名未在 `next.config.ts` 的 `images.remotePatterns` 中，可按实际图片域名增补）。
-
-#### Vercel 部署失败 / GitHub 上 Vercel check 红字
-
-1. 打开 Vercel 项目 → **Deployments → 失败的那条 → Build Logs**，看最后一屏报错（依赖下载、Node 版本、或 **Build / Deploy** 哪一步失败）。
-2. 本项目在 `package.json` 里声明了 **`engines.node >= 20.9.0`**；请在 Vercel **Settings → General → Node.js Version** 选 **20.x**（不要低于 20.9）。
-3. 仓库内已带 **`.npmrc`**（固定 `registry.npmjs.org`）与 **`package-lock.json`**，避免国内镜像在海外构建机上下载失败或超时。
-4. 确认 **Environment Variables** 已按上文填齐（缺变量时运行期会报错；一般不影响 `next build`）。
-5. 根目录 **`vercel.json`** 仅设置 `buildCommand`；安装使用 Vercel 默认 **`npm install`**（与 lockfile 一致即可）。若 Build 绿但 Deploy 红，在日志中搜 `Error` / `limit`。
-
-#### Cloudflare Workers 自动构建（OpenNext）
-
-若你在 Cloudflare 上为仓库配置了 **Git 自动构建**，默认构建命令常为 **`npx opennextjs-cloudflare build`**。本仓库已包含 **`@opennextjs/cloudflare` + `wrangler.jsonc` + `open-next.config.ts`**，与上述命令兼容。
-
-- **环境变量**：在 Cloudflare 项目的 **Settings → Variables** 中为 Worker 配置与 `.env.example` / Vercel 相同的变量（如 `NEXT_PUBLIC_SUPABASE_*`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等），否则运行期接口会失败。若 **`/api/health` 正常但首页打不开**，多半是首页读库失败或此前 **Google Fonts** 在边缘拉取失败；本仓库已改为**系统字体栈**，请重新部署后再试。
-- **`wrangler.jsonc` 里的 `name` / `services[0].service`** 需与你在 Cloudflare 控制台里的 **Worker 名称**一致（当前为 `image-match`；若你的服务名不同，请改两处保持一致）。
-
-**构建成功但浏览器「访问不到」或白屏时**，请逐项核对：
-
-1. **访问的 URL 是否正确**  
-   Workers 默认域名一般为：  
-   `https://<worker 名称>.<你的子域>.workers.dev`  
-   （在 **Workers & Pages → image-match → 概览** 里可复制；**不是** GitHub 仓库地址，也通常**不是** Cloudflare Pages 的 `*.pages.dev`。）
-2. **先探活**：浏览器或终端访问 **`/api/health`**，例如 `https://…workers.dev/api/health`  
-   应返回 JSON：`{"ok":true,"service":"image-match"}`。若此处 404/522，说明流量没到 Worker 或路由未生效。
-3. **环境变量是否在 Worker 上配置**  
-   与 `.env.example` 一致：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`IMGBB_API_KEY` 等。缺省时首页/API 会报错或空白。敏感项用 **Encrypt**。若 **`/api/health` 返回 ok 但 `/` 仍报错**，几乎总是 **Supabase 变量未进 Worker** 或拼写不一致；首页会尽量显示错误说明，仍以控制台 Variables 为准。
-4. **自定义域名**  
-   若绑了自有域名，需在 DNS 按 Cloudflare 提示指向该 Worker，并等待生效；未生效前请先用 `*.workers.dev` 验证。
-5. **本地看实时日志**（可选）：安装依赖后执行 `npx wrangler tail`（需登录 Cloudflare），再刷新页面看服务端报错。
-
-**仍更简单、推荐的做法**：应用主部署在 **Vercel**（`npm run build`），Cloudflare **只做 DNS** 指到 Vercel（见下）。两套 CI（Vercel + Cloudflare）同时连同一分支时，维护成本更高。
-
-若不再需要 Cloudflare 自动构建：可到 **Workers & Pages → 项目 → Settings → Builds → Disconnect** 断开 Git。
-
-每次 push 到默认分支，Vercel 会自动重新部署（可在项目设置里改分支）。
+仓库内附带 **OpenNext + Cloudflare** 相关文件；若你在该路线或类似边缘平台上构建，请按对应官方文档设置构建命令与变量。构建或运行报错时，以该平台日志与 `npm run build` 本地输出为准。
 
 ## 推到 GitHub
 
@@ -114,13 +70,8 @@ git push -u origin main
 
 若使用 SSH：`git remote add origin git@github.com:YOUR_USER/image_match.git`
 
-## 关于「GitHub Pages」与公网测试
+## 关于 GitHub Pages
 
-**GitHub Pages 只托管静态文件**（HTML/CSS/前端 JS），**不能运行**本项目的 **Next.js 服务端与 `/api/*` 路由**（创建比赛、投票、imgbb 代理、限流等均依赖 Node 运行时）。
+**GitHub Pages 只托管静态站点**，无法运行本仓库的 **Next.js 服务端与 `/api/*`**。若需要公网地址，请使用支持 Node 的托管，并配置与 `.env.example` 一致的环境变量。
 
-因此：
-
-- **推荐（与规格一致）**：把本仓库接到 **[Vercel](https://vercel.com)**（或 Netlify / 其他支持 Node 的托管），在控制台配置与 `.env.example` 相同的环境变量，即可得到公网 HTTPS 地址给用户测试。若同时使用 **Cloudflare Workers 自动构建**，需按上文「Cloudflare Workers 自动构建（OpenNext）」配齐 OpenNext 与 Worker 环境变量；否则更推荐 **Cloudflare 只做 DNS / CDN 前置** 指向 Vercel。
-- **若必须使用 `*.github.io`**：需要把业务全部改成「纯静态前端 + Supabase Edge Functions / 仅客户端 + RLS」等大改，**当前仓库未按该模式实现**。
-
-本仓库已包含 **GitHub Actions CI**（`.github/workflows/ci.yml`），在每次 push / PR 时执行 `npm run build` 做基础校验。
+本仓库含 **GitHub Actions CI**（`.github/workflows/ci.yml`），在 push / PR 时执行 `npm run build` 做基础校验。

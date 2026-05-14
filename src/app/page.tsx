@@ -31,11 +31,9 @@ export default async function Home() {
           <p className="font-medium text-amber-100">首页暂时读不到数据库</p>
           <p className="mt-1 text-xs leading-relaxed text-amber-100/85">{homeError}</p>
           <p className="mt-2 text-xs text-amber-100/70">
-            若部署在 <strong className="text-amber-50">Cloudflare Workers</strong>，请到该 Worker 的{" "}
-            <strong className="text-amber-50">Settings → Variables</strong> 配置与{" "}
-            <code className="rounded bg-black/30 px-1">.env.example</code> 相同的变量（含{" "}
+            请核对 <code className="rounded bg-black/30 px-1">.env.example</code> 中的变量是否已在当前运行环境中配置完整（含{" "}
             <code className="rounded bg-black/30 px-1">NEXT_PUBLIC_SUPABASE_URL</code>、
-            <code className="rounded bg-black/30 px-1">SUPABASE_SERVICE_ROLE_KEY</code> 等）。
+            <code className="rounded bg-black/30 px-1">SUPABASE_SERVICE_ROLE_KEY</code> 等），并确认数据库可访问。
           </p>
         </div>
       ) : null}

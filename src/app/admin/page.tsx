@@ -76,7 +76,7 @@ export default async function MasterAdminPage({
       <div>
         <h1 className="text-xl font-semibold text-white">总站管理</h1>
         <p className="mt-2 text-sm text-amber-200/90">
-          仅部署者使用：请勿公开此页面的完整 URL（含 key）。每个比赛仍依赖各自的 manage_token；此处只是集中列出链接与数据。
+          仅主管理员使用：请勿公开此页面的完整 URL（含 key）。每个比赛仍依赖各自的 manage_token；此处只是集中列出链接与数据。
         </p>
         <p className="mt-1 text-xs text-white/45">
           单个比赛管理页路径：<code className="text-cyan-200/90">/manage/&lt;slug&gt;?token=&lt;token&gt;</code>
@@ -87,7 +87,7 @@ export default async function MasterAdminPage({
       <AdminMatchesTable rows={rows} origin={origin} />
 
       <p className="text-xs text-white/35">
-        提示：在 Vercel / 本地 `.env.local` 中设置 `MASTER_ADMIN_SECRET`（足够长的随机串），访问{" "}
+        提示：在环境变量中设置 `MASTER_ADMIN_SECRET`（足够长的随机串），访问{" "}
         <code className="text-white/55">/admin?key=该值</code>。
         <span className="mt-1 block text-white/30">
           「浏览」为投票页累计打开次数（与票数不同）；「图片」为当前图库张数。

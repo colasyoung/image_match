@@ -19,7 +19,7 @@ function FullHintList() {
         文件，链接会失效；重要素材请自行备份。
       </li>
       <li>
-        部署环境可通过 <code className="rounded bg-black/30 px-1">IMGBB_EXPIRATION_SECONDS</code> 调整（秒，官方允许
+        可通过环境变量 <code className="rounded bg-black/30 px-1">IMGBB_EXPIRATION_SECONDS</code> 调整（秒，官方允许
         60–15552000）。机器可读说明见 <code className="rounded bg-black/30 px-1">GET /api/upload-image</code>。
       </li>
     </ul>

@@ -345,9 +345,9 @@ export default function CreatePage() {
           <div className="rounded-2xl border-2 border-amber-400/40 bg-amber-500/10 p-5 text-sm text-amber-50 shadow-lg shadow-amber-900/20">
             <p className="text-base font-semibold text-amber-100">第 1 件事：复制并保存「管理链接」</p>
             <p className="mt-2 text-xs leading-relaxed text-amber-100/85">
-              这是你<strong>以后改标题、删图、暂停或结束</strong>的唯一入口，和投票页不是同一个链接。
+              这是你<strong>以后改标题、删图、暂停或结束（删除）比赛</strong>的唯一入口，和投票页不是同一个链接。
               <strong className="text-amber-50"> 丢了没法找回</strong>
-              （除非你部署了总站 <code className="rounded bg-black/30 px-1">/admin?key=…</code>，见 README）。
+              （若配置了总站入口 <code className="rounded bg-black/30 px-1">/admin?key=…</code>，见 README）。
             </p>
             <p className="mt-3 break-all rounded-lg bg-black/35 p-3 font-mono text-[11px] leading-snug text-cyan-100/95">
               {manageUrl}

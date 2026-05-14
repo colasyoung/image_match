@@ -39,7 +39,7 @@ export function MatchExperience({
           <h1 className="mt-2 text-2xl font-semibold text-white md:text-3xl">{match.title}</h1>
           {match.description ? <p className="mt-2 text-sm text-white/55">{match.description}</p> : null}
           <p className="mt-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/50">
-            本页仅供投票与看榜。<strong className="text-white/70">上传/删图、暂停或结束比赛</strong>
+            本页仅供投票与看榜。<strong className="text-white/70">上传/删图、暂停或结束（删除）比赛</strong>
             需在创建时或管理页保存的链接中操作（投票页不含管理入口）。
           </p>
         </header>
