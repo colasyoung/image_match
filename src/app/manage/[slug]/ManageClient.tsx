@@ -334,7 +334,7 @@ export function ManageClient({ slug }: { slug: string }) {
                   >
                     <div className="relative aspect-square w-full">
                       <Image
-                        src={img.thumb_url || img.image_url}
+                        src={img.image_url}
                         alt=""
                         fill
                         className="object-cover"

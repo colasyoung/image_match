@@ -136,7 +136,7 @@ function DuelCard({
   busy: boolean;
   onPick: () => void;
 }) {
-  const src = image.thumb_url || image.image_url;
+  const src = image.image_url;
   return (
     <motion.button
       type="button"

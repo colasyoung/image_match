@@ -165,7 +165,7 @@ export async function addImageToMatch(input: {
   if (error || !img) throw new Error(error?.message ?? "insert image failed");
 
   if (!match.cover_image) {
-    await admin.from("matches").update({ cover_image: input.thumbUrl ?? input.imageUrl }).eq("id", input.matchId);
+    await admin.from("matches").update({ cover_image: input.imageUrl }).eq("id", input.matchId);
   }
   return img as ImageRow;
 }
@@ -248,7 +248,7 @@ export async function deleteImageFromMatch(slug: string, imageId: string, manage
     .order("sort_order", { ascending: true })
     .limit(1)
     .maybeSingle();
-  const cover = first ? first.thumb_url ?? first.image_url : null;
+  const cover = first ? first.image_url ?? first.thumb_url : null;
   await admin.from("matches").update({ cover_image: cover }).eq("id", match.id);
 }
 
