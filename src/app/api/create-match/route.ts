@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_MAX_IMAGES_PER_MATCH } from "@/lib/match-limits";
-import { NsfwContentRejectedError } from "@/lib/nsfw-screen";
 import { createMatchMultipartPayloadSchema } from "@/lib/schemas";
 import { clientIpFromHeaders, regionFromHeaders } from "@/lib/ip";
 import { createMatchWithInitialMedia, type InitialMediaEntry } from "@/server/match-service";
@@ -85,9 +84,6 @@ export async function POST(req: Request) {
       manageUrl: `/manage/${result.slug}?token=${result.manageToken}`,
     });
   } catch (e) {
-    if (e instanceof NsfwContentRejectedError) {
-      return NextResponse.json({ error: e.message }, { status: 422 });
-    }
     const msg = e instanceof Error ? e.message : "Bad request";
     return NextResponse.json({ error: msg }, { status: 400 });
   }

@@ -78,8 +78,7 @@ npm run dev
 
 1. **再等 5～15 分钟**（大依赖首次上传会慢），并在 Vercel 控制台看该次 Deployment 是否最终变绿。  
 2. **取消后重新 Deploy**；或在项目设置里 **Clear Build Cache** 后再部署。  
-3. 若仍异常：到 [Vercel Status](https://www.vercel-status.com/) 看是否区域性故障；或换 **Deployment Region** 试一次。  
-4. 本仓库已将 **NSFW 检测**改为仅在真正上传图床时 **动态 `import()`**，避免把 TensorFlow 打进每个 API/页面包，以**缩小上传体积**；若需进一步减负，可在环境变量中设 **`DISABLE_NSFW_SCREENING=1`** 临时关闭检测（仅可信环境）。
+3. 若仍异常：到 [Vercel Status](https://www.vercel-status.com/) 看是否区域性故障；或换 **Deployment Region** 试一次。
 
 若本地 `tsc` 报 `Cannot find type definition file for 'node 2'`，多为 `node_modules/@types/` 下误出现 **`node 2` 重复目录**，删掉该目录后执行 `npm install` 即可。
 
@@ -90,8 +89,7 @@ npm run dev
 - **地区字符串**：来自托管平台（如 Vercel / Cloudflare）根据 IP 推断的请求头，**仅为粗略、聚合的 UI 统计**，可能错误或不更新；**不代表**用户的国籍、户籍或官方行政区划认定。展示层对若干敏感标签采用常见技术性写法（例如 ISO 3166-2:CN 子码对应中文行政区名、IOC 对 `TW` 的中英文用名、`HK`/`MO` 的常见中英文表述），以降低 UI 层面的歧义；**不构成**任何政治或领土主张。
 - **IP 与投票**：投票记录中存的是 **IP 的单向哈希**（`battles.voter_ip_hash`），不存明文投票者 IP；创建比赛时存创建者 IP 的哈希（`matches.creator_ip_hash`）及当时的地区字符串（`created_ip_region`）。地区串仍属可能重识别的辅助信息，若你面向 GDPR 等严格场景，请自行评估法律依据、保留期限与隐私政策披露。
 - **语言 Cookie**：用户切换界面语言时写入本站第一方 Cookie（`image_match_locale`）；在 **HTTPS** 下会附加 **`Secure`**。若你面向欧盟等法域，请自行判断是否需要 Cookie 横幅或同意流程。
-- **用户生成内容**：图片由比赛举办方通过本应用上传至 imgbb（或你改动的存储）；**举办方**对著作权、非法或有害内容等承担首要责任；请在上游配置滥用举报与删除流程。
-- **成人内容（自动化粗检）**：服务端在上传至图床前使用 **nsfwjs（TensorFlow Node）** 对图片做色情/成人漫画类等粗检，明显命中则拒绝写入图床（HTTP 422，`error` 为 `NSFW_REJECTED`）。**不能**替代人工审核或当地法律下的合规义务；误判或无法加载模型时可能放行并打日志。无原生 TF 的运行时可设 **`DISABLE_NSFW_SCREENING=1`** 关闭（见 `.env.example`）。
+- **用户生成内容**：图片由比赛举办方通过本应用上传至 imgbb（或你改动的存储）；**举办方**对著作权、非法或有害内容等承担首要责任；须遵守 imgbb 与适用法律；请在上游配置滥用举报与删除流程。当前版本**不包含**服务端自动色情类图像识别，内容合规依赖举办方与托管方策略。
 
 实现入口：`src/lib/region-display.ts`、`src/lib/ip.ts`、`src/lib/cn-region-iso.ts`、`src/server/match-service.ts`；页脚有面向终端用户的简要说明（`site.complianceFoot`）。
 

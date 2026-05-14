@@ -129,7 +129,6 @@ export const MESSAGES: Record<
       Max10: "每场比赛最多 10 张图片。",
       CreateFail: "创建失败",
       UploadFail: "上传失败",
-      NsfwRejected: "该图片未通过自动内容检测（含明显色情/成人漫画类），无法上传。请更换素材；若误判可在服务器设置 DISABLE_NSFW_SCREENING=1（仅限你信任的环境）。",
     },
     create: {
       loading: "加载中…",
@@ -282,7 +281,7 @@ export const MESSAGES: Record<
     hints: {
       title: "上传说明（图床 imgbb）",
       compactLine:
-        "每张最大 {mb}MB；托管约 {days} 天后会自动删除，重要照片请自己留备份。可从网页拖入图片，外链由服务端拉取后上传。含色情类自动粗检，明显违规的不会上传。",
+        "每张最大 {mb}MB；托管约 {days} 天后会自动删除，重要照片请自己留备份。可从网页拖入图片，外链由服务端拉取后上传。",
       expand: "展开技术说明",
       li1:
         "单张最大 {mb}MB，超出将上传失败。可从本机或其它网页把图片拖进上传区：外链由服务端拉取后再传 imgbb（内网、本地地址会被拒绝）。",
@@ -459,8 +458,6 @@ export const MESSAGES: Record<
       Max10: "This match allows at most 10 images.",
       CreateFail: "Create failed",
       UploadFail: "Upload failed",
-      NsfwRejected:
-        "This image was blocked by our automated safety filter (explicit adult or similar content). Try a different image. False positives can be addressed by the operator with DISABLE_NSFW_SCREENING=1 (trusted environments only).",
     },
     create: {
       loading: "Loading…",
@@ -613,7 +610,7 @@ export const MESSAGES: Record<
     hints: {
       title: "Upload notes (imgbb host)",
       compactLine:
-        "Max {mb}MB each; files auto-delete after ~{days} days—keep backups of anything important. You can drag from webpages; remote URLs are fetched server-side then uploaded. Automated adult-content screening may block some uploads.",
+        "Max {mb}MB each; files auto-delete after ~{days} days—keep backups of anything important. You can drag from webpages; remote URLs are fetched server-side then uploaded.",
       expand: "Technical details",
       li1:
         "Max {mb}MB per image or upload fails. Drag from this device or other sites—remote URLs are fetched server-side then sent to imgbb (private/local URLs are rejected).",

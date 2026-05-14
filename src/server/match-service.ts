@@ -151,9 +151,6 @@ export async function createMatchWithInitialMedia(
 export async function uploadImageToImgbb(base64: string, filename?: string) {
   const key = process.env.IMGBB_API_KEY;
   if (!key) throw new Error("Missing IMGBB_API_KEY");
-  const buf = Buffer.from(base64, "base64");
-  const { assertImagePassesNsfwScreen } = await import("@/lib/nsfw-screen");
-  await assertImagePassesNsfwScreen(buf);
   const expiration = resolveImgbbExpirationSeconds();
   const params = new URLSearchParams();
   params.set("image", base64);
