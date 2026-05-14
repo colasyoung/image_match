@@ -13,7 +13,16 @@
 
 ### 2. imgbb
 
-在 [imgbb API](https://api.imgbb.com/) 申请 key，写入下面 `IMGBB_API_KEY`。
+在 [imgbb API](https://api.imgbb.com/) 申请 key，写入 `IMGBB_API_KEY`。
+
+**上传接口** `POST /api/upload-image`（`multipart/form-data`，字段 `matchId`、`manageToken`、`file`）：
+
+- 服务端代理调用 imgbb，**不在前端暴露 key**。
+- **单文件最大 16MB**（本应用限制；imgbb 文档中单图上限更高，此处按 16MB 截断）。
+- 调用 imgbb 时携带 **`expiration`**（秒，默认 **2592000 = 30 天**），到期后由 **imgbb 自动删除** 托管文件；数据库里仍会存 URL，过期后链接可能失效，重要素材请自行备份或改用自有存储。
+- 可选环境变量 **`IMGBB_EXPIRATION_SECONDS`**：覆盖过期秒数，须在 imgbb 允许范围 **60–15552000**（见官方文档）。
+
+**接口说明（机器可读）**：浏览器或脚本访问 **`GET /api/upload-image`** 可拿到字段说明、大小限制、`expiration` 说明与官方文档链接。
 
 ### 3. 环境变量与启动
 
@@ -21,7 +30,7 @@
 cd /path/to/image_match
 cp .env.example .env.local
 # 编辑 .env.local，填齐 NEXT_PUBLIC_SUPABASE_URL、NEXT_PUBLIC_SUPABASE_ANON_KEY、
-# SUPABASE_SERVICE_ROLE_KEY、IMGBB_API_KEY
+# SUPABASE_SERVICE_ROLE_KEY、IMGBB_API_KEY（可选 IMGBB_EXPIRATION_SECONDS）
 
 npm install
 npm run dev
@@ -52,6 +61,7 @@ npm run dev
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`（仅服务端使用，不要改成 `NEXT_PUBLIC_`）
    - `IMGBB_API_KEY`
+   - （可选）`IMGBB_EXPIRATION_SECONDS`：imgbb 自动删除延迟（秒，60–15552000；默认 2592000 = 30 天）
    - （可选）`MASTER_ADMIN_SECRET`：用于 `/admin?key=…` 总站，见上文「管理页面」
 4. 点击 **Deploy**。完成后用 Vercel 提供的 `*.vercel.app` 域名测试；若上传图片失败，在 **imgbb** 或 **Vercel 函数日志**里看报错（常见为 key 错误或 imgbb 域名未在 `next.config.ts` 的 `images.remotePatterns` 中，可按实际图片域名增补）。
 

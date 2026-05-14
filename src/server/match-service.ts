@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import { customAlphabet } from "nanoid";
+import { resolveImgbbExpirationSeconds } from "@/lib/imgbb";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashIp } from "@/lib/ip";
 
@@ -87,17 +88,29 @@ export async function createMatch(input: {
 export async function uploadImageToImgbb(base64: string, filename?: string) {
   const key = process.env.IMGBB_API_KEY;
   if (!key) throw new Error("Missing IMGBB_API_KEY");
+  const expiration = resolveImgbbExpirationSeconds();
   const params = new URLSearchParams();
   params.set("image", base64);
   if (filename) params.set("name", filename);
-  const res = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(key)}`, {
+  const q = new URLSearchParams({
+    key,
+    expiration: String(expiration),
+  });
+  const res = await fetch(`https://api.imgbb.com/1/upload?${q.toString()}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
   });
   const json = (await res.json()) as {
     success?: boolean;
-    data?: { url: string; display_url?: string; thumb?: { url?: string }; width?: number; height?: number };
+    data?: {
+      url: string;
+      display_url?: string;
+      thumb?: { url?: string };
+      width?: number;
+      height?: number;
+      expiration?: string | number;
+    };
     error?: { message?: string };
   };
   if (!json.success || !json.data?.url) {
@@ -108,6 +121,7 @@ export async function uploadImageToImgbb(base64: string, filename?: string) {
     thumb: json.data.thumb?.url ?? json.data.display_url ?? json.data.url,
     width: json.data.width ?? null,
     height: json.data.height ?? null,
+    imgbbExpirationSeconds: expiration,
   };
 }
 
