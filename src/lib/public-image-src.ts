@@ -22,6 +22,16 @@ export function publicImageSrc(url: string | null | undefined): string {
   }
 }
 
+/** 对战缩略图层：仅 `thumb_url`（无则空串，表示不做「先糊后清」）。 */
+export function duelThumbOnlySrc(image: { thumb_url: string | null }): string {
+  return publicImageSrc((image.thumb_url ?? "").trim());
+}
+
+/** 对战高清层：主图 URL。 */
+export function duelFullSrc(image: { image_url: string }): string {
+  return publicImageSrc((image.image_url ?? "").trim());
+}
+
 /** 对战卡片等：优先缩略图，减少跨境传输字节；再套一层 `publicImageSrc` 以支持镜像。 */
 export function voteCardImageSrc(image: { image_url: string; thumb_url: string | null }): string {
   return publicImageSrc((image.thumb_url || image.image_url || "").trim());

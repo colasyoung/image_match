@@ -79,7 +79,7 @@ export function RecentVotesFeed({ slug, initialItems, initialRegionCounts }: Pro
                   title={label}
                   className="inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
                 >
-                  <span className="min-w-0 max-w-[min(14rem,72vw)] truncate">{label}</span>
+                  <span className="min-w-0 max-w-[min(100%,72vw)] whitespace-normal break-words">{label}</span>
                   <span className="shrink-0 font-mono text-white/45">{n}</span>
                 </span>
               );
@@ -121,28 +121,40 @@ function VoteStrip({
   const timeLabel = relTime(row.created_at, t);
 
   if (row.skipped) {
+    const text = t("feed.voteSkipped", { region });
     return (
-      <li className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-1.5 pl-2.5 text-[11px] text-white/55">
-        <Mini src={row.left_thumb} />
-        <span className="text-white/30">{t("common.vs")}</span>
-        <Mini src={row.right_thumb} />
-        <span className="min-w-0 flex-1 truncate">{t("feed.voteSkipped", { region })}</span>
-        <time className="shrink-0 tabular-nums text-white/35">{timeLabel}</time>
+      <li className="flex flex-col gap-1.5 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-2 pl-2.5 text-[11px] text-white/55 sm:flex-row sm:items-center sm:gap-2 sm:py-1.5">
+        <div className="flex shrink-0 items-center gap-2">
+          <Mini src={row.left_thumb} />
+          <span className="text-white/30">{t("common.vs")}</span>
+          <Mini src={row.right_thumb} />
+        </div>
+        <div className="flex min-w-0 w-full flex-1 items-start justify-between gap-2 sm:items-baseline">
+          <span className="min-w-0 flex-1 whitespace-normal break-words leading-snug" title={text}>
+            {text}
+          </span>
+          <time className="shrink-0 tabular-nums text-white/35">{timeLabel}</time>
+        </div>
       </li>
     );
   }
 
   const pickedLeft = row.winner_image_id === row.left_image_id;
+  const text = pickedLeft ? t("feed.votePickedLeft", { region }) : t("feed.votePickedRight", { region });
 
   return (
-    <li className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-1.5 pl-2.5">
-      <Mini src={row.left_thumb} ring={pickedLeft} />
-      <span className="shrink-0 text-[10px] text-white/28">{t("common.vs")}</span>
-      <Mini src={row.right_thumb} ring={!pickedLeft} />
-        <span className="min-w-0 flex-1 truncate text-[11px] leading-snug text-white/65">
-          {pickedLeft ? t("feed.votePickedLeft", { region }) : t("feed.votePickedRight", { region })}
+    <li className="flex flex-col gap-1.5 rounded-lg border border-white/8 bg-white/[0.04] px-2 py-2 pl-2.5 sm:flex-row sm:items-center sm:gap-2 sm:py-1.5">
+      <div className="flex shrink-0 items-center gap-2">
+        <Mini src={row.left_thumb} ring={pickedLeft} />
+        <span className="shrink-0 text-[10px] text-white/28">{t("common.vs")}</span>
+        <Mini src={row.right_thumb} ring={!pickedLeft} />
+      </div>
+      <div className="flex min-w-0 w-full flex-1 items-start justify-between gap-2 sm:items-baseline">
+        <span className="min-w-0 flex-1 whitespace-normal break-words text-[11px] leading-snug text-white/65" title={text}>
+          {text}
         </span>
-      <time className="shrink-0 tabular-nums text-[10px] text-white/35">{timeLabel}</time>
+        <time className="shrink-0 tabular-nums text-[10px] text-white/35">{timeLabel}</time>
+      </div>
     </li>
   );
 }

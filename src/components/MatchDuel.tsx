@@ -12,7 +12,10 @@ import {
   isAbortError,
 } from "@/lib/fetch-with-timeout";
 import type { ImageRow } from "@/server/match-service";
-import { voteCardImageSrc } from "@/lib/public-image-src";
+import { duelFullSrc, duelThumbOnlySrc, voteCardImageSrc } from "@/lib/public-image-src";
+import type { ImageNetworkTier } from "@/lib/image-network-tier";
+import { fullImageUpgradeDelayMs } from "@/lib/image-network-tier";
+import { useNetworkImageTier } from "@/hooks/useNetworkImageTier";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +23,7 @@ type Props = { slug: string; disabled?: boolean };
 
 export function MatchDuel({ slug, disabled }: Props) {
   const { t } = useLocale();
+  const networkTier = useNetworkImageTier();
   const [left, setLeft] = useState<ImageRow | null>(null);
   const [right, setRight] = useState<ImageRow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -215,21 +219,25 @@ export function MatchDuel({ slug, disabled }: Props) {
       ) : null}
       <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4">
         <DuelCard
+          key={left.id}
           image={left}
           side={t("duel.left")}
           busy={gateBusy}
           revealPair={revealPair}
           loadOrder={0}
+          networkTier={networkTier}
           onPick={() => void vote(left, right)}
           onImageReady={() => setLeftImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
         />
         <DuelCard
+          key={right.id}
           image={right}
           side={t("duel.right")}
           busy={gateBusy}
           revealPair={revealPair}
           loadOrder={1}
+          networkTier={networkTier}
           onPick={() => void vote(right, left)}
           onImageReady={() => setRightImgReady(true)}
           onImageError={() => setImgLoadFailed(true)}
@@ -256,6 +264,7 @@ function DuelCard({
   busy,
   revealPair,
   loadOrder,
+  networkTier,
   onImageReady,
   onImageError,
 }: {
@@ -267,12 +276,39 @@ function DuelCard({
   revealPair: boolean;
   /** 0=先抢首包（左图），1=后载（右图），减轻手机端双连接并发与解码压力 */
   loadOrder: 0 | 1;
+  networkTier: ImageNetworkTier;
   onImageReady: () => void;
   onImageError: () => void;
 }) {
   const { t } = useLocale();
-  const src = voteCardImageSrc(image);
   const primary = loadOrder === 0;
+  const thumbOnly = duelThumbOnlySrc(image);
+  const fullOnly = duelFullSrc(image);
+  const progressive = Boolean(thumbOnly && fullOnly && thumbOnly !== fullOnly);
+  const singleSrc = voteCardImageSrc(image);
+
+  const [showFull, setShowFull] = useState(false);
+  const [fullLoaded, setFullLoaded] = useState(false);
+  const [thumbDecoded, setThumbDecoded] = useState(false);
+
+  const onThumbLoadingComplete = useCallback(() => {
+    setThumbDecoded(true);
+    onImageReady();
+  }, [onImageReady]);
+
+  useEffect(() => {
+    if (!progressive || !thumbDecoded) return;
+    const delay = fullImageUpgradeDelayMs(networkTier);
+    if (delay === 0) {
+      queueMicrotask(() => setShowFull(true));
+      return;
+    }
+    const id = window.setTimeout(() => setShowFull(true), delay);
+    return () => clearTimeout(id);
+  }, [progressive, thumbDecoded, networkTier, image.id]);
+
+  const sizes = "(max-width: 768px) min(48vw, 420px), min(50vw, 520px)";
+
   return (
     <motion.button
       type="button"
@@ -297,22 +333,66 @@ function DuelCard({
             <span className="text-[11px] font-medium text-white/55">{t("duel.loadingImg")}</span>
           </div>
         ) : null}
-        <Image
-          src={src}
-          alt=""
-          fill
-          priority={primary}
-          fetchPriority={primary ? "high" : "low"}
-          quality={72}
-          className={cn(
-            "object-cover transition duration-300",
-            revealPair && !busy && "group-hover:scale-[1.02]",
-            !revealPair && "opacity-0"
-          )}
-          sizes="(max-width: 768px) min(48vw, 420px), min(50vw, 520px)"
-          onLoadingComplete={onImageReady}
-          onError={onImageError}
-        />
+
+        {progressive ? (
+          <>
+            <Image
+              src={thumbOnly}
+              alt=""
+              fill
+              priority={primary}
+              fetchPriority={primary ? "high" : "low"}
+              quality={52}
+              className={cn(
+                "object-cover transition duration-300",
+                revealPair && !busy && "group-hover:scale-[1.02]",
+                !revealPair && "opacity-0",
+                progressive && showFull && !fullLoaded && "max-md:blur-[2px]"
+              )}
+              sizes={sizes}
+              onLoadingComplete={onThumbLoadingComplete}
+              onError={onImageError}
+            />
+            {showFull ? (
+              <Image
+                src={fullOnly}
+                alt=""
+                fill
+                priority={false}
+                fetchPriority="low"
+                quality={78}
+                className={cn(
+                  "pointer-events-none absolute inset-0 z-[2] object-cover transition-opacity duration-500 ease-out",
+                  fullLoaded ? "opacity-100" : "opacity-0",
+                  !revealPair && "opacity-0"
+                )}
+                sizes={sizes}
+                onLoadingComplete={() => setFullLoaded(true)}
+                onError={() => {
+                  /* 高清失败则保留缩略图，不阻断投票 */
+                }}
+              />
+            ) : null}
+          </>
+        ) : (
+          <Image
+            src={singleSrc}
+            alt=""
+            fill
+            priority={primary}
+            fetchPriority={primary ? "high" : "low"}
+            quality={72}
+            className={cn(
+              "object-cover transition duration-300",
+              revealPair && !busy && "group-hover:scale-[1.02]",
+              !revealPair && "opacity-0"
+            )}
+            sizes={sizes}
+            onLoadingComplete={onImageReady}
+            onError={onImageError}
+          />
+        )}
+
         <div
           className={cn(
             "pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent opacity-90 transition-opacity duration-300",
