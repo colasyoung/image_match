@@ -4,6 +4,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LocaleProvider, useLocale } from "@/contexts/LocaleProvider";
+import {
+  AUTHOR_FACEBOOK_URL,
+  AUTHOR_INSTAGRAM_URL,
+} from "@/lib/author-links";
 import type { AppLocale } from "@/lib/i18n/types";
 
 function SiteFooter() {
@@ -11,6 +15,32 @@ function SiteFooter() {
   return (
     <footer className="relative z-10 border-t border-white/5 bg-black/15 px-4 py-5 text-center text-[10px] leading-relaxed text-white/38">
       <p className="mx-auto max-w-3xl">{t("site.complianceFoot")}</p>
+      <div className="mx-auto mt-4 max-w-3xl border-t border-white/10 pt-4 text-white/48">
+        <p>{t("site.authorIntro")}</p>
+        <p className="mt-2 flex flex-wrap items-center justify-center gap-x-1 gap-y-1">
+          <a
+            href={AUTHOR_FACEBOOK_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded px-1.5 py-0.5 text-cyan-300/85 underline decoration-cyan-400/35 underline-offset-2 transition hover:text-cyan-200 hover:decoration-cyan-300/60"
+            aria-label={t("site.authorAriaFacebook")}
+          >
+            {t("site.authorLinkFacebook")}
+          </a>
+          <span className="text-white/25" aria-hidden>
+            ·
+          </span>
+          <a
+            href={AUTHOR_INSTAGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded px-1.5 py-0.5 text-cyan-300/85 underline decoration-cyan-400/35 underline-offset-2 transition hover:text-cyan-200 hover:decoration-cyan-300/60"
+            aria-label={t("site.authorAriaInstagram")}
+          >
+            {t("site.authorLinkInstagram")}
+          </a>
+        </p>
+      </div>
     </footer>
   );
 }

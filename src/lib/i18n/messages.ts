@@ -15,6 +15,12 @@ export const MESSAGES: Record<
     site: {
       complianceFoot:
         "地区标签来自托管方（如 Vercel）请求头中的 IP 地理信息，仅为粗略、匿名的统计展示，不代表司法或国籍含义。投票者 IP 仅存单向哈希。图片由比赛举办方上传，须自行遵守适用的法律法规（著作权、禁止传播的内容等）。界面语言使用本地 Cookie；HTTPS 站点下该 Cookie 会带 Secure。本段文字不构成法律意见；面向公众部署前请自行评估合规。",
+      authorIntro:
+        "由 Fan Yang 维护。使用中有问题、建议或合作意向，欢迎通过下方社交主页联系（应用内无私信）。",
+      authorLinkFacebook: "Facebook",
+      authorLinkInstagram: "Instagram",
+      authorAriaFacebook: "Fan Yang 的 Facebook（在新标签页打开）",
+      authorAriaInstagram: "Fan Yang 的 Instagram（在新标签页打开）",
     },
     home: {
       titleTagline: "图片对战 · 实时人气",
@@ -339,6 +345,12 @@ export const MESSAGES: Record<
     site: {
       complianceFoot:
         "Region labels come from your host’s IP geolocation headers (e.g. Vercel)—approximate, aggregate display only; they are not legal residency or nationality. Voter IPs are stored only as one-way hashes. Match hosts are responsible for uploads and applicable laws (copyright, illegal content, etc.). Language preference uses a first-party cookie; on HTTPS it is set with the Secure flag. This text is not legal advice—review compliance before a public launch.",
+      authorIntro:
+        "Maintained by Fan Yang. Questions, feedback, or collaboration ideas are welcome via the social links below (there is no in-app messaging).",
+      authorLinkFacebook: "Facebook",
+      authorLinkInstagram: "Instagram",
+      authorAriaFacebook: "Fan Yang on Facebook (opens in a new tab)",
+      authorAriaInstagram: "Fan Yang on Instagram (opens in a new tab)",
     },
     home: {
       titleTagline: "Image battles · live popularity",
