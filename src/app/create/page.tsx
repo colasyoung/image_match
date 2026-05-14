@@ -16,6 +16,7 @@ export default function CreatePage() {
     id: string;
   } | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [copied, setCopied] = useState(false);
 
   const canCreate = title.trim().length > 0;
 
@@ -125,19 +126,39 @@ export default function CreatePage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4 text-sm text-emerald-100/90">
-            <p className="font-medium">草稿已创建</p>
-            <p className="mt-2 break-all text-xs text-white/60">管理链接（请收藏）：{manageUrl}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
+          <div className="rounded-2xl border-2 border-amber-400/40 bg-amber-500/10 p-5 text-sm text-amber-50 shadow-lg shadow-amber-900/20">
+            <p className="text-base font-semibold text-amber-100">务必保存：管理页面入口</p>
+            <p className="mt-2 text-xs leading-relaxed text-amber-100/85">
+              普通用户只会打开比赛页 <code className="rounded bg-black/30 px-1">/m/{created.slug}</code>。
+              只有下面这个链接能<strong>暂停 / 结束 / 删除</strong>比赛并上传图片；<strong>丢失 token 后无法找回</strong>（除非你在服务器配置了总站，见 README）。
+            </p>
+            <p className="mt-3 break-all rounded-lg bg-black/35 p-3 font-mono text-[11px] leading-snug text-cyan-100/95">
+              {manageUrl}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                className="!bg-amber-400/90 !text-slate-950 hover:!bg-amber-300"
+                onClick={() => {
+                  void navigator.clipboard.writeText(manageUrl).then(
+                    () => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2500);
+                    },
+                    () => setErr("复制失败，请手动全选上方链接")
+                  );
+                }}
+              >
+                {copied ? "已复制" : "复制管理链接"}
+              </Button>
               <Link
                 href={`/manage/${created.slug}?token=${encodeURIComponent(created.manageToken)}`}
-                className="text-xs font-medium text-cyan-200 underline"
+                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white hover:bg-white/15"
               >
                 打开管理页
               </Link>
-              <span className="text-white/30">|</span>
-              <Link href={`/m/${created.slug}`} className="text-xs text-white/55 hover:text-white/80">
-                预览比赛页（草稿时他人不可见）
+              <Link href={`/m/${created.slug}`} className="text-xs text-white/55 underline hover:text-white/80">
+                仅预览比赛页
               </Link>
             </div>
           </div>

@@ -29,6 +29,16 @@ npm run dev
 
 浏览器打开 [http://localhost:3000](http://localhost:3000)，走「创建 → 上传至少 2 张图 → 开启比赛 → 进入 `/m/你的slug`」完整试一遍。
 
+### 管理页面在哪？
+
+- **单个比赛**（创建后 API 也会返回）：`https://你的域名/manage/<slug>?token=<manage_token>`  
+  例如：`https://xxx.vercel.app/manage/abc12xyz34?token=一长串十六进制`  
+  创建成功页会高亮显示并可一键复制；**请勿把带 token 的链接发给普通投票用户**（只给主办方）。
+
+- **可选「总站」**（方便你一个人管所有比赛）：在 `.env.local` / Vercel 中设置 **`MASTER_ADMIN_SECRET`** 为足够长的随机串，然后访问：  
+  `https://你的域名/admin?key=<与 MASTER_ADMIN_SECRET 完全相同的值>`  
+  会列出数据库中的比赛及各自完整管理链接。`key` 与密钥不一致或未配置时，页面会显示 404（避免暴露后台存在）。**切勿把该 URL 发到公网或聊天记录。**
+
 ---
 
 ## 部署到公网（推荐 Vercel）
@@ -37,11 +47,12 @@ npm run dev
 
 1. 登录 [Vercel](https://vercel.com)，**Add New → Project**，导入你的 GitHub 仓库。
 2. Framework Preset 选 **Next.js**，其余默认即可。
-3. **Environment Variables** 里添加与 `.env.example` 相同的四项（值与 Supabase / imgbb 控制台一致）：
+3. **Environment Variables** 里添加与 `.env.example` 一致的项目（值与 Supabase / imgbb 控制台一致）：
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`（仅服务端使用，不要改成 `NEXT_PUBLIC_`）
    - `IMGBB_API_KEY`
+   - （可选）`MASTER_ADMIN_SECRET`：用于 `/admin?key=…` 总站，见上文「管理页面」
 4. 点击 **Deploy**。完成后用 Vercel 提供的 `*.vercel.app` 域名测试；若上传图片失败，在 **imgbb** 或 **Vercel 函数日志**里看报错（常见为 key 错误或 imgbb 域名未在 `next.config.ts` 的 `images.remotePatterns` 中，可按实际图片域名增补）。
 
 每次 push 到默认分支，Vercel 会自动重新部署（可在项目设置里改分支）。
