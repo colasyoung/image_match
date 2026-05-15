@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 import { getServerLocale } from "@/lib/i18n/server-locale";
+import { Analytics } from "@vercel/analytics/next";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getServerLocale();
@@ -35,6 +36,7 @@ export default async function RootLayout({
       <body className="min-h-full bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 text-foreground">
         <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(34,211,238,0.12),_transparent_55%)]" />
         <AppShell initialLocale={locale}>{children}</AppShell>
+        <Analytics />
       </body>
     </html>
   );
